@@ -1,5 +1,3 @@
-from operator import mod
-from os import EX_PROTOCOL, path
 import sys
 import argparse
 import timeit
@@ -11,6 +9,7 @@ def test_onnx_latency():
     import onnxruntime as ort
     import torch 
     import numpy as np
+    from utils import get_onnx_model_inputs
 
     parser = argparse.ArgumentParser()
     parser.add_argument('func', help='specify the work to do.')
@@ -32,32 +31,10 @@ def test_onnx_latency():
     session = ort.InferenceSession(args.model, providers=execution_providers)
     model = onnx.load(args.model)
 
-    def get_inputs(model):
-        inputs = {}
-        for input in model.graph.input:
-            name = input.name
-            shape = []
-            tensor_type = input.type.tensor_type
-            for d in tensor_type.shape.dim:
-                if d.HasField('dim_value'):
-                    shape.append(d.dim_value)
-                else:
-                    shape.append(1)
-            if len(shape) == 4:
-                inputs[name] = np.random.randn(*shape).astype(np.float32)
-            else:
-                if 'mask' in name:
-                    inputs[name] = np.ones(shape=shape, dtype=np.int64)
-                elif 'type' in name:
-                    inputs[name] = np.zeros(shape=shape, dtype=np.int64)
-                else:
-                    inputs[name] = np.random.randint(low=0, high=10000, size=shape, dtype=np.int64)
-        return inputs
-
     latency_list = []
     for _ in range(args.num_runs):
         start_time = timeit.default_timer()
-        session.run(None, get_inputs(model))
+        session.run(None, get_onnx_model_inputs(model))
         latency = timeit.default_timer() - start_time
         latency_list.append(latency)
 
@@ -353,8 +330,9 @@ def export_onnx_proxyless_mobile():
     model = proxyless_mobile(pretrained=False)
     export_onnx(model, 'models/onnx_model/proxyless_mobile.onnx', [1,3,224,224])
 
-def tf2tflite():
+def tf2tflite_cmd():
     import tensorflow as tf
+    from utils import tf2tflite
     parser = argparse.ArgumentParser()
     parser.add_argument('func', help='specify the work to do.')
     parser.add_argument('--input', required=True, type=str, help='input path')
@@ -363,26 +341,12 @@ def tf2tflite():
     parser.set_defaults(keras=False)
     args = parser.parse_args()
 
-    saved_model_dir = args.input
-    output_name = args.output
+    saved_model_path = args.input
+    output_path = args.output
     is_keras = args.keras
-    # Convert the model
-    if is_keras:
-        model = tf.keras.models.load_model(saved_model_dir)
-        converter = tf.lite.TFLiteConverter.from_keras_model(model)
-    else:
-        converter = tf.lite.TFLiteConverter.from_saved_model(saved_model_dir) # path to the SavedModel directory
-    converter.target_spec.supported_ops = [
-        tf.lite.OpsSet.TFLITE_BUILTINS, # enable TensorFlow Lite ops.
-        tf.lite.OpsSet.SELECT_TF_OPS # enable TensorFlow ops.
-    ]
-    tflite_model = converter.convert()
+    
+    tf2tflite(saved_model_path, output_path)
 
-    # Save the model.
-    with open(output_name, 'wb') as f:
-        f.write(tflite_model)
-
-    print('Convert success.')
 
 
 def mobile_benchmark():
@@ -427,10 +391,15 @@ def onnx2tflite_cmd():
     parser = argparse.ArgumentParser()
     parser.add_argument('func', help='specify the work to do.')
     parser.add_argument('--model', required=True, type=str, help='onnx model path')
+    parser.add_argument('--output', '-o', default=None, type=str, help='output tflite model path')
+    parser.add_argument('--save_tf', action='store_true', dest='save_tf', help='to save tf SavedModel')
+    parser.set_defaults(save_tf=False)
     args = parser.parse_args()
 
     onnx_model_path = args.model
-    onnx2tflite(onnx_model_path)
+    output_path = args.output
+    save_tf = args.save_tf
+    onnx2tflite(onnx_model_path, output_path, save_tf)
 
 
 def save_vit():
@@ -499,7 +468,112 @@ def export_onnx_vit_huggingface():
     input_shape = [1, 3, image_size, image_size]
     export_onnx(model, output_path, input_shape)
 
+
+def export_tflite_attention():
+    from utils import tf2tflite, get_attention_plus_input
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('func', help='specify the work to do.')
+    parser.add_argument('--hidden_size', default=768, type=int)
+    parser.add_argument('--num_heads', default=12, type=int)
+    parser.add_argument('--head_size', default=None, type=int)
+    parser.add_argument('--seq_len', default=128, type=int)
+    parser.add_argument('--tf_path', default=None, type=str, help='tf savedModel path')
+    parser.add_argument('--output', '-o', default=None, type=str, help='output tflite model path')
+    args = parser.parse_args()
+
+    h = args.hidden_size
+    a = args.num_heads
+    n = args.seq_len
+    h_k = args.head_size
+    tf_path = args.tf_path
+    output_path = args.output
+    if output_path is None:
+        if h_k is None:
+            output_path = f'models/tflite_model/attention_h{h}_a{a}_n{n}.tflite'
+        else:
+            output_path = f'models/tflite_model/attention_h{h}_a{a}_hk{h_k}_n{n}.tflite'
+
+    attn = get_attention_plus_input(h, a, h_k, n)
+    if tf_path:
+        attn.save(tf_path)
+    tf2tflite(attn, output_path, is_keras_model=True)
+
+
+def export_tflite_ffn():
+    from utils import tf2tflite, get_ffn_plus_input
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('func', help='specify the work to do.')
+    parser.add_argument('--hidden_size', default=768, type=int)
+    parser.add_argument('--intermediate_size', '-i', default=3072, type=int)
+    parser.add_argument('--seq_len', default=128, type=int)
+    parser.add_argument('--tf_path', default=None, type=str, help='tf savedModel path')
+    parser.add_argument('--output', '-o', default=None, type=str, help='output tflite model path')
+    args = parser.parse_args()
+
+    h = args.hidden_size
+    i = args.intermediate_size
+    n = args.seq_len
+    tf_path = args.tf_path
+    output_path = args.output
+    if output_path is None:
+        output_path = f'models/tflite_model/ffn_h{h}_i{i}_n{n}.tflite'
     
+    attn = get_ffn_plus_input(h, i, n)
+    if tf_path:
+        attn.save(tf_path)
+    tf2tflite(attn, output_path, is_keras_model=True)
+
+
+def export_onnx_attention():
+    from utils import get_attention_plus_input, export_onnx
+    parser = argparse.ArgumentParser()
+    parser.add_argument('func', help='specify the work to do.')
+    parser.add_argument('--hidden_size', default=768, type=int)
+    parser.add_argument('--num_heads', default=12, type=int)
+    parser.add_argument('--head_size', default=None, type=int)
+    parser.add_argument('--seq_len', default=128, type=int)
+    parser.add_argument('--output', '-o', default=None, type=str, help='output onnx model path')
+    args = parser.parse_args()
+
+    h = args.hidden_size
+    a = args.num_heads
+    n = args.seq_len
+    h_k = args.head_size
+    output_path = args.output
+    if output_path is None:
+        if h_k is None:
+            output_path = f'models/onnx_model/attention_h{h}_a{a}_n{n}.onnx'
+        else:
+            output_path = f'models/onnx_model/attention_h{h}_a{a}_hk{h_k}_n{n}.onnx'
+
+    model = get_attention_plus_input(h=h, a=a, h_k=h_k, n=n, is_tf=False)
+    export_onnx(model, output_path, input_shape=[1, n, h])
+
+
+def export_onnx_ffn():
+    from utils import export_onnx, get_ffn_plus_input
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('func', help='specify the work to do.')
+    parser.add_argument('--hidden_size', default=768, type=int)
+    parser.add_argument('--intermediate_size', '-i', default=3072, type=int)
+    parser.add_argument('--seq_len', default=128, type=int)
+    parser.add_argument('--output', '-o', default=None, type=str, help='output onnx model path')
+    args = parser.parse_args()
+
+    h = args.hidden_size
+    i = args.intermediate_size
+    n = args.seq_len
+    output_path = args.output
+    if output_path is None:
+        output_path = f'models/onnx_model/ffn_h{h}_i{i}_n{n}.onnx'
+    
+    model = get_ffn_plus_input(h, i, n, is_tf=False)
+    export_onnx(model, output_path, input_shape=[1, n, h])
+
+
 def main():
     func = sys.argv[1]
     if func == 'test_onnx_latency':
@@ -511,7 +585,7 @@ def main():
     elif func == 'save_bert_encoder':
         save_bert_encoder()
     elif func == 'tf2tflite':
-        tf2tflite()
+        tf2tflite_cmd()
     elif func == 'mobile_benchmark':
         mobile_benchmark()
     elif func == 'get_onnx_opset_version':
@@ -538,7 +612,14 @@ def main():
         export_onnx_proxyless_mobile()
     elif func == 'export_onnx_vit_huggingface':
         export_onnx_vit_huggingface()
-
+    elif func == 'export_tflite_attention':
+        export_tflite_attention()
+    elif func == 'export_tflite_ffn':
+        export_tflite_ffn()
+    elif func == 'export_onnx_attention':
+        export_onnx_attention()
+    elif func == 'export_onnx_ffn':
+        export_onnx_ffn()
 
 if __name__ == '__main__':
     main()

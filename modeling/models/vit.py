@@ -7,7 +7,7 @@ from layers.activation import gelu
 
 class ViT(tf.keras.Model):
 
-    def __init__(self, *, image_size, patch_size, num_classes, dim, depth, heads, mlp_dim):
+    def __init__(self, *, image_size=224, patch_size=16, num_classes=1000, dim=768, depth=12, heads=12, mlp_dim=3072):
         super().__init__()
         assert image_size % patch_size == 0, 'image dimensions must be divisible by the patch size'
         num_patches = (image_size // patch_size) ** 2

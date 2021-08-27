@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 class LayerNorm(tf.keras.Model):
-    def __init__(self, fn, pre=True):
+    def __init__(self, fn, pre=False):
         super().__init__()
         self.norm = tf.keras.layers.LayerNormalization(epsilon=1e-5)
         self.fn = fn

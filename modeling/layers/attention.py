@@ -4,15 +4,18 @@ from einops.layers.tensorflow import Rearrange
 
 class Attention(tf.keras.Model):
 
-    def __init__(self, dim, num_heads):
-        if dim % num_heads != 0:
-            raise ValueError(f'hidden_size {dim} must be a multiple of num_heads {num_heads}.')
-        
+    def __init__(self, dim, num_heads, h_k=None):
+        if h_k is None:
+            if dim % num_heads != 0:
+                raise ValueError(f'hidden_size {dim} must be a multiple of num_heads {num_heads}.')
+            self.h_k = dim // num_heads
+        else:
+            self.h_k = h_k
         super().__init__()
         self.num_heads = num_heads
-        self.scale = dim ** -0.5
+        self.scale = self.h_k ** -0.5
  
-        self.to_qkv = tf.keras.layers.Dense(dim * 3, use_bias=False)
+        self.to_qkv = tf.keras.layers.Dense(self.num_heads * self.h_k * 3, use_bias=False)
         self.to_out = tf.keras.layers.Dense(dim)
 
         self.rearrange_qkv = Rearrange('b n (qkv h d) -> qkv b h n d', qkv = 3, h = self.num_heads)

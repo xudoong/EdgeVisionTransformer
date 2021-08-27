@@ -14,6 +14,7 @@ class Attention(nn.Module):
         super().__init__()
         self.num_heads = num_heads
         self.scale = self.head_size ** -0.5
+        self.hidden_size = hidden_size
 
         self.to_query = nn.Linear(in_features=hidden_size, out_features=self.num_heads * self.head_size)
         self.to_key = nn.Linear(in_features=hidden_size, out_features=self.num_heads * self.head_size)
@@ -30,7 +31,7 @@ class Attention(nn.Module):
 
         key = self.transpose_for_scores(self.to_key(x))
         value = self.transpose_for_scores(self.to_value(x))
-        query = self.transpose_for_scores(self.to_query(mixed_query))
+        query = self.transpose_for_scores(mixed_query)
 
         attention_scores = torch.matmul(query, key.transpose(-1, -2))
         attention_scores = attention_scores * self.scale 
@@ -42,5 +43,6 @@ class Attention(nn.Module):
 
         next_shape = context.size()[:-2] + (self.num_heads * self.head_size,)
         context = context.view(*next_shape)
+        context = self.to_out(context)
 
         return context

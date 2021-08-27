@@ -4,7 +4,7 @@ import timeit
 import numpy as np
 
 
-def test_onnx_latency():
+def server_benchmark():
     import onnx
     import onnxruntime as ort
     import torch 
@@ -23,7 +23,18 @@ def test_onnx_latency():
                         type=int,
                         default=10,
                         help="number of times to run per sample. By default, the value is 1000 / samples")
-
+    parser.add_argument(
+        '--warm_ups',
+        required=False,
+        type=int,
+        default=10,
+    )
+    parser.add_argument(
+        '--dtype',
+        default=None,
+        type=str,
+        help='input data type'
+    )
     args = parser.parse_args()
 
     execution_providers = ['CPUExecutionProvider'
@@ -31,15 +42,18 @@ def test_onnx_latency():
     session = ort.InferenceSession(args.model, providers=execution_providers)
     model = onnx.load(args.model)
 
+    for _ in range(args.warm_ups):
+        session.run(None, get_onnx_model_inputs(model, args.dtype))
     latency_list = []
     for _ in range(args.num_runs):
         start_time = timeit.default_timer()
-        session.run(None, get_onnx_model_inputs(model))
+        session.run(None, get_onnx_model_inputs(model, args.dtype))
         latency = timeit.default_timer() - start_time
         latency_list.append(latency)
 
     avg_latency = np.average(latency_list)
-    print(f'Avg latency: {avg_latency * 1000: .2f}ms')
+    std_latency = np.std(latency_list)
+    print(f'Avg latency: {avg_latency * 1000: .2f} ms, Std: {std_latency * 1000: .2f} ms.')
 
 
 def test_tf_latency():
@@ -574,10 +588,23 @@ def export_onnx_ffn():
     export_onnx(model, output_path, input_shape=[1, n, h])
 
 
+def fetch_latency_std_cmd():
+    from utils import fetch_latency_std
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('func', help='specify the work to do.')
+    parser.add_argument('--file', '-f', required=True, type=str, help='log file')
+    parser.add_argument('--begin_line', default=0, type=int)
+    parser.add_argument('--end_line', default=None, type=int)
+    args = parser.parse_args()
+
+    fetch_latency_std(args.file, args.begin_line, args.end_line)
+
+
 def main():
     func = sys.argv[1]
-    if func == 'test_onnx_latency':
-        test_onnx_latency()
+    if func == 'server_benchmark':
+        server_benchmark()
     elif func == 'export_onnx':
         export_onnx_cmd()
     elif func == 'export_onnx_deit':
@@ -620,6 +647,8 @@ def main():
         export_onnx_attention()
     elif func == 'export_onnx_ffn':
         export_onnx_ffn()
+    elif func == 'fetch_latency_std':
+        fetch_latency_std_cmd()
 
 if __name__ == '__main__':
     main()

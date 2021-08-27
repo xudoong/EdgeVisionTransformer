@@ -249,11 +249,20 @@ def fetch_latency_std(file_path, begin_line=0, end_line=None):
     for line in lines:
         if line.find('Avg latency') == -1: continue
         begin = line.find('Avg latency') + len('Avg latency ')
-        end = line.find('ms') - 1
+        while not line[begin].isnumeric():
+            begin += 1
+        end = begin
+        while line[end].isnumeric() or line[end] == '.':
+            end += 1
         latency = float(line[begin: end])
 
         begin = line.find('Std') + len('Std ')
-        std = float(line[begin: -4])
+        while not line[begin].isnumeric():
+            begin += 1
+        end = begin
+        while line[end].isnumeric() or line[end] == '.':
+            end += 1
+        std = float(line[begin: end])
 
         latency_list.append(latency)
         std_list.append(std)
@@ -263,7 +272,7 @@ def fetch_latency_std(file_path, begin_line=0, end_line=None):
     print(fmtL.format(*std_list))
 
 
-def get_onnx_model_inputs(model):
+def get_onnx_model_inputs(model, dtype=None):
     import numpy as np
     inputs = {}
     for input in model.graph.input:
@@ -275,7 +284,7 @@ def get_onnx_model_inputs(model):
                 shape.append(d.dim_value)
             else:
                 shape.append(1)
-        if len(shape) == 4:
+        if len(shape) == 4 or dtype=='float32':
             inputs[name] = np.random.randn(*shape).astype(np.float32)
         else:
             if 'mask' in name:

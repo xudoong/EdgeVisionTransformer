@@ -39,6 +39,12 @@ def server_benchmark():
         type=int,
         default=1,
     )
+    parser.add_argument(
+        '--top',
+        type=int,
+        default=None,
+        help='number of shortest runs to take average'
+    )
     args = parser.parse_args()
 
     execution_providers = ['CPUExecutionProvider'
@@ -60,6 +66,9 @@ def server_benchmark():
         latency = timeit.default_timer() - start_time
         latency_list.append(latency)
 
+    latency_list = sorted(latency_list)
+    if args.top:
+        latency_list = latency_list[:args.top]
     avg_latency = np.average(latency_list)
     std_latency = np.std(latency_list)
     print(f'Avg latency: {avg_latency * 1000: .2f} ms, Std: {std_latency * 1000: .2f} ms.')

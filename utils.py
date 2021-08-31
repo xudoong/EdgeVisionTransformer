@@ -184,7 +184,7 @@ def get_attention(h=768, a=12, h_k=None, is_tf=True, n=128):
         return attn
 
 
-def get_ffn(h=768, i=3072, is_tf=True, n=128):
+def get_ffn(h=768, i=3072, is_tf=True, n=128, only_ffn=False):
     '''Args:
     h: hidden_size
     i: intermediate_size
@@ -194,6 +194,8 @@ def get_ffn(h=768, i=3072, is_tf=True, n=128):
         from modeling.layers.norm import LayerNorm
         from modeling.layers.ffn import FeedForward
 
+        if only_ffn:
+            return FeedForward(h, i)
         ffn = LayerNorm(Residual(FeedForward(h, i)))
         return ffn
     
@@ -202,6 +204,8 @@ def get_ffn(h=768, i=3072, is_tf=True, n=128):
         from modeling.torch_layers.norm import LayerNorm
         from modeling.torch_layers.ffn import FeedForward
 
+        if only_ffn:
+            return FeedForward(h, i)
         ffn = LayerNorm([n, h], Residual(FeedForward(h, i)))
         return ffn
 
@@ -221,18 +225,18 @@ def get_attention_plus_input(h=768, a=12, h_k=None, n=128, is_tf=True):
         return attn
 
 
-def get_ffn_plus_input(h=768, i=3072, n=128, is_tf=True):
+def get_ffn_plus_input(h=768, i=3072, n=128, is_tf=True, only_ffn=False):
     if is_tf:
         import tensorflow as tf
 
-        ffn = get_ffn(h, i)
+        ffn = get_ffn(h, i, only_ffn=only_ffn)
         input = tf.keras.layers.Input(shape=[n, h], batch_size=1)
         output = ffn(input)
         
         model = tf.keras.Model(input, output)
         return model
     else:
-        ffn = get_ffn(h, i, is_tf=False, n=n)
+        ffn = get_ffn(h, i, is_tf=False, n=n, only_ffn=only_ffn)
         return ffn
 
 
@@ -294,3 +298,96 @@ def get_onnx_model_inputs(model, dtype=None):
             else:
                 inputs[name] = np.random.randint(low=0, high=10000, size=shape, dtype=np.int64)
     return inputs
+
+
+
+def freeze_graph(keras_model_path=None, keras_model=None, output_path='./tmp.pb'):
+    import tensorflow as tf
+    from tensorflow import keras
+    from tensorflow.python.framework.convert_to_constants import convert_variables_to_constants_v2
+    import numpy as np
+
+    if keras_model_path is None and keras_model is None:
+        exit('One of keras_model_path and keras_model should not be none.')
+    if keras_model_path:
+       model = tf.keras.models.load_model(keras_model_path)
+    else:
+        model = keras_model
+    # Convert Keras model to ConcreteFunction
+    full_model = tf.function(lambda x: model(x))
+    full_model = full_model.get_concrete_function(
+        tf.TensorSpec(model.inputs[0].shape, model.inputs[0].dtype))
+    # Get frozen ConcreteFunction
+    frozen_func = convert_variables_to_constants_v2(full_model)
+    frozen_func.graph.as_graph_def()
+    layers = [op.name for op in frozen_func.graph.get_operations()]
+    op = frozen_func.graph.get_operations()[2]
+    print("-" * 60)
+    print("Frozen model layers: ")
+    for layer in layers:
+        print(layer)
+    print("-" * 60)
+    print("Frozen model inputs: ")
+    print(frozen_func.inputs)
+    print("Frozen model outputs: ")
+    print(frozen_func.outputs)
+    # Save frozen graph to disk
+    tf.io.write_graph(graph_or_graph_def=frozen_func.graph,
+                    logdir='',
+                    name=output_path,
+                    as_text=False)
+    # # Save its text representation
+    # tf.io.write_graph(graph_or_graph_def=frozen_func.graph,
+    #                 logdir=frozen_out_path,
+    #                 name=f"{frozen_graph_filename}.pbtxt",
+    #                 as_text=True)
+
+
+def get_ffn_tf1(h=768, i=3072, n=128, only_ffn=False):
+    from modeling.layers.tf1_layers import ffn
+    import tensorflow as tf
+
+    input = tf.placeholder(dtype=tf.float32, shape=[1, 1, n, h])
+    x = ffn(input, i)
+    if not only_ffn:
+        x = input + x
+        x = tf.contrib.layers.layer_norm(x)
+    return input, x
+
+def get_simple_tf1():
+    import tensorflow as tf
+    
+    input = tf.placeholder(dtype=tf.float32, shape=[1,1,100,100])
+    x = input * 100
+    return input, x
+
+
+def save_to_pb(outputs, output_path):
+    import os
+    import tensorflow as tf
+    def patch_frozen_graph(graph):
+        for node in graph.node:
+            if 'explicit_paddings' in node.attr.keys():
+                #print('Find explicit_paddings in node %s, removing.' % node.name)
+                del node.attr['explicit_paddings']
+            if node.op == 'AddV2':
+            # print('Find AddV2 in node %s, patching to Add.' % node.name)
+                node.op = 'Add'
+            if node.op == 'FusedBatchNormV3':
+                #print('Find FusedBatchNormV3 in node %s, patching to FusedBatchNorm.' % node.name)
+                node.op = 'FusedBatchNorm'
+                del node.attr['U']
+            if node.op == 'BatchMatMulV2':
+                node.op = 'MatMul'
+        return graph
+    
+    outputs_ops_names = [o.op.name for o in outputs]
+    print(outputs_ops_names)
+    with tf.compat.v1.Session() as sess:
+        sess.run(tf.compat.v1.global_variables_initializer())
+
+        constant_graph = tf.compat.v1.graph_util.convert_variables_to_constants(
+                sess, sess.graph_def, outputs_ops_names)
+        constant_graph=patch_frozen_graph(constant_graph)
+        with tf.gfile.FastGFile(output_path, mode='wb') as f:
+                f.write(constant_graph.SerializeToString())

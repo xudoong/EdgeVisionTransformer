@@ -3,7 +3,6 @@ import argparse
 import timeit
 import numpy as np
 
-
 def server_benchmark():
     import onnx
     import onnxruntime as ort
@@ -524,6 +523,8 @@ def export_tflite_ffn():
     parser.add_argument('--seq_len', default=128, type=int)
     parser.add_argument('--tf_path', default=None, type=str, help='tf savedModel path')
     parser.add_argument('--output', '-o', default=None, type=str, help='output tflite model path')
+    parser.add_argument('--only_ffn', action='store_true', dest='only_ffn', help='export ffn without residual and layernorm')
+    parser.set_defaults(only_ffn=False)
     args = parser.parse_args()
 
     h = args.hidden_size
@@ -531,13 +532,37 @@ def export_tflite_ffn():
     n = args.seq_len
     tf_path = args.tf_path
     output_path = args.output
+    only_ffn = args.only_ffn
     if output_path is None:
         output_path = f'models/tflite_model/ffn_h{h}_i{i}_n{n}.tflite'
     
-    attn = get_ffn_plus_input(h, i, n)
+    ffn = get_ffn_plus_input(h, i, n, only_ffn=only_ffn)
     if tf_path:
-        attn.save(tf_path)
-    tf2tflite(attn, output_path, is_keras_model=True)
+        ffn.save(tf_path)
+    tf2tflite(ffn, output_path, is_keras_model=True)
+
+
+def export_pb_ffn():
+    from utils import get_ffn_tf1, save_to_pb
+    parser = argparse.ArgumentParser()
+    parser.add_argument('func', help='specify the work to do.')
+    parser.add_argument('--hidden_size', default=768, type=int)
+    parser.add_argument('--intermediate_size', '-i', default=3072, type=int)
+    parser.add_argument('--seq_len', default=128, type=int)
+    parser.add_argument('--output', '-o', default=None, type=str, help='output pb model path')
+    parser.add_argument('--only_ffn', action='store_true', dest='only_ffn', help='export ffn without residual and layernorm')
+    parser.set_defaults(only_ffn=False)
+    args = parser.parse_args()
+
+    h = args.hidden_size
+    i = args.intermediate_size
+    n = args.seq_len
+    output_path = args.output
+    only_ffn = args.only_ffn
+    if output_path is None:
+        output_path = f'models/pb_model/ffn_h{h}_i{i}_n{n}.pb'
+    input, output = get_ffn_tf1(h, i, n, only_ffn=only_ffn)
+    save_to_pb(outputs=[output], output_path=output_path)
 
 
 def export_onnx_attention():
@@ -649,6 +674,8 @@ def main():
         export_onnx_ffn()
     elif func == 'fetch_latency_std':
         fetch_latency_std_cmd()
+    elif func == 'export_pb_ffn':
+        export_pb_ffn()
 
 if __name__ == '__main__':
     main()

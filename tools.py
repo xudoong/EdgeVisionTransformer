@@ -20,13 +20,13 @@ def server_benchmark():
     parser.add_argument('--num_runs',
                         required=False,
                         type=int,
-                        default=10,
+                        default=50,
                         help="number of times to run per sample. By default, the value is 1000 / samples")
     parser.add_argument(
         '--warm_ups',
         required=False,
         type=int,
-        default=10,
+        default=50,
     )
     parser.add_argument(
         '--dtype',
@@ -34,11 +34,21 @@ def server_benchmark():
         type=str,
         help='input data type'
     )
+    parser.add_argument(
+        '--intra_op_threads',
+        type=int,
+        default=1,
+    )
     args = parser.parse_args()
 
     execution_providers = ['CPUExecutionProvider'
                                ] if not args.use_gpu else ['CUDAExecutionProvider', 'CPUExecutionProvider']
-    session = ort.InferenceSession(args.model, providers=execution_providers)
+    session_options = ort.SessionOptions()
+    session_options.intra_op_num_threads = args.intra_op_threads
+    session_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+    session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+
+    session = ort.InferenceSession(args.model, providers=execution_providers, sess_options=session_options)
     model = onnx.load(args.model)
 
     for _ in range(args.warm_ups):

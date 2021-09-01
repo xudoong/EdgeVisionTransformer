@@ -210,6 +210,17 @@ def get_ffn(h=768, i=3072, is_tf=True, n=128, only_ffn=False):
         return ffn
 
 
+def get_dense_plus_input(in_units=768, out_units=768, is_tf=True, n=128):
+    if is_tf:
+        import tensorflow as tf
+        input = tf.keras.Input(shape=[n, in_units], batch_size=1)
+        output =  tf.keras.layers.Dense(units=out_units,)(input)
+        return tf.keras.Model(input, output)
+        
+    else:
+        import torch
+        return torch.nn.Linear(in_features=in_units, out_features=out_units)
+
 def get_attention_plus_input(h=768, a=12, h_k=None, n=128, is_tf=True):
     if is_tf:
         import tensorflow as tf
@@ -240,7 +251,7 @@ def get_ffn_plus_input(h=768, i=3072, n=128, is_tf=True, only_ffn=False):
         return ffn
 
 
-def fetch_latency_std(file_path, begin_line=0, end_line=None):
+def fetch_latency_std(file_path, begin_line=0, end_line=None, precision=2):
     f = open(file_path)
     if end_line is None:
         lines = f.readlines()[begin_line:]
@@ -271,7 +282,7 @@ def fetch_latency_std(file_path, begin_line=0, end_line=None):
         latency_list.append(latency)
         std_list.append(std)
 
-    fmtL = "Q = " + ', '.join(["{:.2f}"]*len(latency_list))
+    fmtL = "Q = " + ', '.join(["{:." + str(precision) + "f}"]*len(latency_list))
     print(fmtL.format(*latency_list))
     print(fmtL.format(*std_list))
 

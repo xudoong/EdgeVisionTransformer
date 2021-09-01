@@ -424,17 +424,22 @@ def mobile_benchmark():
     parser.add_argument('--model', required=True, type=str, help='tflitemodel path')
     parser.add_argument('--use_gpu', dest='use_gpu', action='store_true')
     parser.add_argument('--num_runs', type=int, default=10, help='number of runs')
+    parser.add_argument('--warm_ups', type=int, default=10)
     parser.add_argument('--num_threads', type=int, default=1, help='number of threads')
+    parser.add_argument('--skip_push', action='store_true', dest='skip_push')
     parser.set_defaults(use_gpu=False)
+    parser.set_defaults(skip_push=False)
     args = parser.parse_args()
 
     model_path = args.model
     use_gpu = args.use_gpu
     num_threads = args.num_threads
     num_runs = args.num_runs
+    warm_ups = args.warm_ups
+    skip_push = args.skip_push
  
     adb = ADBConnect("98281FFAZ009SV")
-    std_ms, avg_ms = run_on_android(model_path, adb, use_gpu,num_threads=num_threads, num_runs=num_runs)
+    std_ms, avg_ms = run_on_android(model_path, adb, use_gpu,num_threads=num_threads, num_runs=num_runs, warm_ups=warm_ups, skip_push=skip_push)
     print(std_ms / avg_ms * 100, f'Avg latency {avg_ms} ms,', f'Std {std_ms} ms.')
 
 
@@ -666,6 +671,28 @@ def export_onnx_ffn():
     export_onnx(model, output_path, input_shape=[1, n, h])
 
 
+def export_onnx_dense():
+    from utils import export_onnx, get_dense_plus_input
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('func', help='specify the work to do.')
+    parser.add_argument('--input_size', default=768, type=int)
+    parser.add_argument('--output_size', default=3072, type=int)
+    parser.add_argument('--seq_len', default=128, type=int)
+    parser.add_argument('--output', '-o', default=None, type=str, help='output onnx model path')
+    args = parser.parse_args()
+
+    input_size = args.input_size
+    output_size = args.output_size
+    n = args.seq_len
+    output_path = args.output
+    if output_path is None:
+        output_path = f'models/onnx_model/dense_i{input_size}_o{output_size}_n{n}.onnx'
+    
+    model = get_dense_plus_input(input_size, output_size, n=n, is_tf=False)
+    export_onnx(model, output_path, input_shape=[1, n, input_size])
+
+
 def fetch_latency_std_cmd():
     from utils import fetch_latency_std
 
@@ -674,9 +701,10 @@ def fetch_latency_std_cmd():
     parser.add_argument('--file', '-f', required=True, type=str, help='log file')
     parser.add_argument('--begin_line', default=0, type=int)
     parser.add_argument('--end_line', default=None, type=int)
+    parser.add_argument('--precision', default=2, type=int)
     args = parser.parse_args()
 
-    fetch_latency_std(args.file, args.begin_line, args.end_line)
+    fetch_latency_std(args.file, args.begin_line, args.end_line, precision=args.precision)
 
 
 def main():
@@ -729,6 +757,8 @@ def main():
         fetch_latency_std_cmd()
     elif func == 'export_pb_ffn':
         export_pb_ffn()
+    elif func == 'export_onnx_dense':
+        export_onnx_dense()
 
 if __name__ == '__main__':
     main()

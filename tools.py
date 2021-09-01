@@ -50,6 +50,12 @@ def server_benchmark():
         action='store_true',
         dest='io_binding'
     )
+    parser.add_argument(
+        '--precision',
+        default=2,
+        choices=[2,3,4,5,6],
+        type=int,
+    )
     parser.set_defaults(io_binding=False)
     args = parser.parse_args()
 
@@ -99,7 +105,7 @@ def server_benchmark():
         latency_list = latency_list[:args.top]
     avg_latency = np.average(latency_list)
     std_latency = np.std(latency_list)
-    print(f'Avg latency: {avg_latency * 1000: .2f} ms, Std: {std_latency * 1000: .2f} ms.')
+    print(f'Avg latency: {avg_latency * 1000: .{args.precision}f} ms, Std: {std_latency * 1000: .{args.precision}f} ms.')
 
 
 def test_tf_latency():

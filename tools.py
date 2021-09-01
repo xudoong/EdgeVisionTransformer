@@ -45,6 +45,12 @@ def server_benchmark():
         default=None,
         help='number of shortest runs to take average'
     )
+    parser.add_argument(
+        '--io_binding',
+        action='store_true',
+        dest='io_binding'
+    )
+    parser.set_defaults(io_binding=False)
     args = parser.parse_args()
 
     execution_providers = ['CPUExecutionProvider'
@@ -55,17 +61,39 @@ def server_benchmark():
     session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
 
     session = ort.InferenceSession(args.model, providers=execution_providers, sess_options=session_options)
+    if args.io_binding:
+        io_binding = session.io_binding()
     model = onnx.load(args.model)
 
+    # warm up
     for _ in range(args.warm_ups):
-        session.run(None, get_onnx_model_inputs(model, args.dtype))
+        input = get_onnx_model_inputs(model, args.dtype)
+        if args.io_binding:
+            io_binding.bind_cpu_input('input', input['input'])
+            io_binding.bind_output('output')
+            session.run_with_iobinding(io_binding)
+        else:
+            session.run(None, input)
+
+    # run
     latency_list = []
     for _ in range(args.num_runs):
+        input = get_onnx_model_inputs(model, args.dtype)
+        if args.io_binding:
+            io_binding.bind_cpu_input('input', input['input'])
+            io_binding.bind_output('output')
+
         start_time = timeit.default_timer()
-        session.run(None, get_onnx_model_inputs(model, args.dtype))
+
+        if args.io_binding:
+            session.run_with_iobinding(io_binding)
+        else:
+            session.run(None, input)
+            
         latency = timeit.default_timer() - start_time
         latency_list.append(latency)
 
+    # summarize
     latency_list = sorted(latency_list)
     if args.top:
         latency_list = latency_list[:args.top]

@@ -1,3 +1,4 @@
+from os import O_RDONLY
 import sys
 import argparse
 import timeit
@@ -241,16 +242,22 @@ def export_onnx_deit():
     parser.add_argument('--output', required=True, type=str, help='onnx output path')
     parser.add_argument('--input_shape', required=True, type=str, help='input shape')
     parser.add_argument('--type', type=str, choices=['tiny', 'small', 'base'], default='base', help='deit config')
+    parser.add_argument('--fix_batch', action='store_true', dest='fix_batch')
+    parser.set_defaults(fix_batch=False)
     args = parser.parse_args()
 
     onnx_model_path = args.output
     input_shape = [int(num) for num in args.input_shape.split(',')]
     type = args.type
+    fix_batch = args.fix_batch
 
     import timm
-    deit_type = f'deit_{type}_patch16_384'
+    if input_shape[-1] == 384:
+      deit_type = f'deit_{type}_patch16_384'
+    else:
+      deit_type = f'deit_{type}_patch16_224'
     model = torch.hub.load('facebookresearch/deit:main', deit_type, pretrained=True)
-    export_onnx(model, onnx_model_path, input_shape)
+    export_onnx(model, onnx_model_path, input_shape, dynamic_batch=not fix_batch)
 
 
 def export_onnx_bert_huggingface():
@@ -658,16 +665,23 @@ def export_onnx_ffn():
     parser.add_argument('--intermediate_size', '-i', default=3072, type=int)
     parser.add_argument('--seq_len', default=128, type=int)
     parser.add_argument('--output', '-o', default=None, type=str, help='output onnx model path')
+    parser.add_argument('--only_ffn', action='store_true', dest='only_ffn', help='export ffn without residual and layernorm')
+    parser.set_defaults(only_ffn=False)
     args = parser.parse_args()
 
     h = args.hidden_size
     i = args.intermediate_size
     n = args.seq_len
     output_path = args.output
+    only_ffn = args.only_ffn
     if output_path is None:
-        output_path = f'models/onnx_model/ffn_h{h}_i{i}_n{n}.onnx'
+        if not only_ffn:
+            output_path = f'models/onnx_model/ffn_h{h}_i{i}_n{n}.onnx'
+        else:
+            output_path = f'models/onnx_model/ffn_h{h}_i{i}_n{n}_pure.onnx'
+
     
-    model = get_ffn_plus_input(h, i, n, is_tf=False)
+    model = get_ffn_plus_input(h, i, n, is_tf=False, only_ffn=only_ffn)
     export_onnx(model, output_path, input_shape=[1, n, h])
 
 

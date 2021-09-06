@@ -254,6 +254,7 @@ MY_FLOPS = dict(
     bert_base = TransformerHparams(l = 12, h = 768, s = 128).get_block_flops() * 12,
     bert_base_196 = TransformerHparams(l = 12, h = 768, s = 196).get_block_flops() * 12,
     vit = ViTHparams(image_size=224).get_infer_flops(),
+    vit_base_384 = ViTHparams(image_size=384).get_infer_flops(),
     deit_base = ViTHparams(l=12, h=768, image_size=224).get_infer_flops(),
     deit_small = ViTHparams(l=12, h=384, image_size=224).get_infer_flops(),
     deit_tiny = ViTHparams(l=12, h=192, image_size=224).get_infer_flops()

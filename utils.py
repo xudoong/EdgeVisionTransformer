@@ -69,7 +69,7 @@ def get_bert_encoder(num_layers, hidden_size, num_heads, seq_len, batch_size=Non
     return model
 
 
-def export_onnx(torch_model, output_path, input_shape, opset_version=12):
+def export_onnx(torch_model, output_path, input_shape, opset_version=12, dynamic_batch=True):
     import torch
 
     torch.onnx.export(
@@ -82,8 +82,8 @@ def export_onnx(torch_model, output_path, input_shape, opset_version=12):
         export_params=True,
         opset_version=opset_version,
         do_constant_folding=True,
-        dynamic_axes={'input' : {0 : 'batch_size'},    # variable length axes
-                      'output' : {0 : 'batch_size'}}
+        dynamic_axes= None if not dynamic_batch else {'input' : {0 : 'batch_size'},    # variable length axes
+                                                  'output' : {0 : 'batch_size'}}
     )
 
     print(f'Successfully export model to {output_path} as onnx.')

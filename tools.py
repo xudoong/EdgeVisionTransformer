@@ -721,6 +721,25 @@ def fetch_latency_std_cmd():
     fetch_latency_std(args.file, args.begin_line, args.end_line, precision=args.precision)
 
 
+def quantize_onnx():
+    import os
+    from onnxruntime.quantization import quantize_dynamic, QuantType
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('func', help='specify the work to do.')
+    parser.add_argument('--model', required=True, type=str, help='float32 onnx model to quantize')
+    parser.add_argument('--output_path', '--output', '-o', default=None, type=str)
+    args = parser.parse_args()
+    input_path = args.model
+    output_path = args.output_path
+    if output_path is None:
+        name = os.path.splitext(input_path)
+        output_path = name + '_quant.onnx'
+    quantize_dynamic(input_path, output_path)
+    print(f'Successfully quantize model to {output_path}.')
+
+
+
 def main():
     func = sys.argv[1]
     if func == 'server_benchmark':
@@ -773,6 +792,8 @@ def main():
         export_pb_ffn()
     elif func == 'export_onnx_dense':
         export_onnx_dense()
+    elif func == 'quantize_onnx':
+        quantize_onnx()
 
 if __name__ == '__main__':
     main()

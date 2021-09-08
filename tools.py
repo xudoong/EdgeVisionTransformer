@@ -733,11 +733,30 @@ def quantize_onnx():
     input_path = args.model
     output_path = args.output_path
     if output_path is None:
-        name = os.path.splitext(input_path)
+        name = os.path.splitext(input_path)[0]
         output_path = name + '_quant.onnx'
     quantize_dynamic(input_path, output_path)
     print(f'Successfully quantize model to {output_path}.')
 
+
+def evaluate_onnx_cmd():
+    from utils import evaluate_onnx_pipeline
+    parser = argparse.ArgumentParser()
+    parser.add_argument('func', help='specify the work to do.')
+    parser.add_argument('--model', required=True, type=str, help='float32 onnx model to quantize')
+    parser.add_argument('--data_path', '--data', required=True, type=str, help='image net 1k dataset path')
+    parser.add_argument('--threads', default=8, type=int, help='num of threads to perform inference')
+    parser.add_argument('--batch_size', '-b', default=50, type=int, help='batch size')
+    parser.add_argument('--num_workers', default=4, type=int, help='num of workers to load data')
+    args = parser.parse_args()
+
+    model_path = args.model 
+    data_path = args.data_path
+    num_threads = args.threads
+    batch_size = args.batch_size
+    num_workers = args.num_workers
+
+    evaluate_onnx_pipeline(model_path, data_path, num_threads, batch_size, num_workers)
 
 
 def main():
@@ -794,6 +813,8 @@ def main():
         export_onnx_dense()
     elif func == 'quantize_onnx':
         quantize_onnx()
+    elif func == 'eval_onnx':
+        evaluate_onnx_cmd()
 
 if __name__ == '__main__':
     main()

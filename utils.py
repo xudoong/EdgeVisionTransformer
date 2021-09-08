@@ -402,3 +402,84 @@ def save_to_pb(outputs, output_path):
         constant_graph=patch_frozen_graph(constant_graph)
         with tf.gfile.FastGFile(output_path, mode='wb') as f:
                 f.write(constant_graph.SerializeToString())
+
+
+'''=========================================================================================================
+    evaluate model
+========================================================================================================='''
+
+def build_eval_dataset(data_path, input_size=224):
+    def build_eval_transform(input_size):
+        from torchvision import transforms
+        from timm.data.constants import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
+        t = []
+        if input_size > 32:
+            size = int((256 / 224) * input_size)
+            t.append(
+                transforms.Resize(size, interpolation=3),  # to maintain same ratio w.r.t. 224 images
+            )
+            t.append(transforms.CenterCrop(input_size))
+
+        t.append(transforms.ToTensor())
+        t.append(transforms.Normalize(IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD))
+        return transforms.Compose(t)
+
+    import os
+    from torchvision import datasets
+    transform = build_eval_transform(input_size)
+    root = os.path.join(data_path, 'val')
+    dataset = datasets.ImageFolder(root, transform=transform)
+    num_classes = 1000
+    return dataset, num_classes
+
+
+def to_data_loader(dataset, batch_size, num_workers):
+    import torch
+    sampler = torch.utils.data.SequentialSampler(dataset)
+    data_loader = torch.utils.data.DataLoader(
+        dataset, sampler=sampler,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        pin_memory=True,
+        drop_last=False
+    )
+    return data_loader
+
+
+def evaluate_onnx(model_path, data_loader, threads):
+    import onnxruntime as ort
+    import numpy as np
+
+
+    # execution_providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+    execution_providers = ['CPUExecutionProvider']
+    session_options = ort.SessionOptions()
+    session_options.intra_op_num_threads = threads
+    session_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+    session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    session = ort.InferenceSession(model_path, providers=execution_providers, sess_options=session_options)
+
+    input_name = session.get_inputs()[0].name
+
+    total = 0
+    correct = 0
+    for images, target in data_loader:
+        if len(images.shape) == 3:
+            images = images.unsqueeze(0)
+
+        images = images.numpy()
+        logits = session.run(None, {input_name:images})[0]
+        pred = np.argmax(logits, axis=1)
+
+        total += len(logits)
+        correct += np.sum(pred == target.numpy())
+
+        if total % 10 == 0:
+            print (f'{total: 5d} / 50000 Accuracy: {correct / total * 100: .2f}%')
+    print(f'Evaluate accuracy: {correct / total * 100: .2f}%')
+
+
+def evaluate_onnx_pipeline(model_path, data_path, threads=8, batch_size=50, num_workers=4):
+    dataset, _ = build_eval_dataset(data_path)
+    data_loader = to_data_loader(dataset, batch_size, num_workers)
+    evaluate_onnx(model_path, data_loader, threads)

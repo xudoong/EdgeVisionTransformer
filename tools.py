@@ -1,4 +1,3 @@
-from os import O_RDONLY
 import sys
 import argparse
 import timeit

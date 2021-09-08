@@ -251,7 +251,7 @@ def get_ffn_plus_input(h=768, i=3072, n=128, is_tf=True, only_ffn=False):
         return ffn
 
 
-def fetch_latency_std(file_path, begin_line=0, end_line=None, precision=2):
+def fetch_latency_std(file_path, begin_line=0, end_line=None, precision=2, only_latency=True):
     f = open(file_path)
     if end_line is None:
         lines = f.readlines()[begin_line:]
@@ -262,29 +262,32 @@ def fetch_latency_std(file_path, begin_line=0, end_line=None, precision=2):
     std_list = []
 
     for line in lines:
-        if line.find('Avg latency') == -1: continue
-        begin = line.find('Avg latency') + len('Avg latency ')
+        line = line.lower()
+        if line.find('latency') == -1: continue
+        begin = line.find('latency') + len('latency ')
         while not line[begin].isnumeric():
             begin += 1
         end = begin
         while line[end].isnumeric() or line[end] == '.':
             end += 1
         latency = float(line[begin: end])
-
-        begin = line.find('Std') + len('Std ')
-        while not line[begin].isnumeric():
-            begin += 1
-        end = begin
-        while line[end].isnumeric() or line[end] == '.':
-            end += 1
-        std = float(line[begin: end])
-
         latency_list.append(latency)
-        std_list.append(std)
+
+        if not only_latency:
+            begin = line.find('std') + len('std ')
+            while not line[begin].isnumeric():
+                begin += 1
+            end = begin
+            while end < len(line) and line[end].isnumeric() or line[end] == '.':
+                end += 1
+            std = float(line[begin: end])
+
+            std_list.append(std)
 
     fmtL = "Q = " + ', '.join(["{:." + str(precision) + "f}"]*len(latency_list))
     print(fmtL.format(*latency_list))
-    print(fmtL.format(*std_list))
+    if not only_latency:
+        print(fmtL.format(*std_list))
 
 
 def get_onnx_model_inputs(model, dtype=None):

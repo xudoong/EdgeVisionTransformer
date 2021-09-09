@@ -728,14 +728,36 @@ def quantize_onnx():
     parser.add_argument('func', help='specify the work to do.')
     parser.add_argument('--model', required=True, type=str, help='float32 onnx model to quantize')
     parser.add_argument('--output_path', '--output', '-o', default=None, type=str)
+    parser.add_argument('--dtype', '--data_type', choices=['uint8', 'int8'], default='uint8', type=str, help='quantization output data type')
     args = parser.parse_args()
     input_path = args.model
     output_path = args.output_path
     if output_path is None:
         name = os.path.splitext(input_path)[0]
         output_path = name + '_quant.onnx'
-    quantize_dynamic(input_path, output_path)
+
+    dtype = QuantType.QInt8 if args.dtype == 'int8' else QuantType.QUInt8
+    quantize_dynamic(input_path, output_path, activation_type=dtype)
     print(f'Successfully quantize model to {output_path}.')
+
+
+def optimize_onnx_transformer():
+    import os
+    from onnxruntime.transformers import optimizer
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('func', help='specify the work to do.')
+    parser.add_argument('--model', '-m', '-i', required=True, type=str, help='transformer onnx model to optimize')
+    parser.add_argument('--output_path', '--output', '-o', default=None, type=str, help='output model path')
+    parser.add_argument('--num_heads', '-a', default=12, type=int, help='number of attention heads')
+    parser.add_argument('--hidden_size', default=768, type=int, help='hidden size')
+    args = parser.parse_args()
+
+    if args.output_path is None:
+        args.output_path = os.path.splitext(args.model)[0] + '_opt.onnx'
+    opt_model = optimizer.optimize_model(args.model, num_heads=args.num_heads, hidden_size=args.hidden_size)
+    opt_model.save_model_to_file(args.output_path)
+    print(f'Successfully export optimized model to {args.output_path}.')
 
 
 def evaluate_onnx_cmd():
@@ -814,6 +836,8 @@ def main():
         quantize_onnx()
     elif func == 'eval_onnx':
         evaluate_onnx_cmd()
+    elif func in ['opt_onnx_transformer', 'opt_onnx', 'optimize_onnx']:
+        optimize_onnx_transformer()
 
 if __name__ == '__main__':
     main()

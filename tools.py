@@ -407,17 +407,19 @@ def tf2tflite_cmd():
     from utils import tf2tflite
     parser = argparse.ArgumentParser()
     parser.add_argument('func', help='specify the work to do.')
-    parser.add_argument('--input', required=True, type=str, help='input path')
+    parser.add_argument('--input',  required=True, type=str, help='input path')
     parser.add_argument('--output', required=True, type=str, help='output path')
     parser.add_argument('--keras', dest='keras', action='store_true')
+    parser.add_argument('--quantization', default='None', choices=['None', 'dynamic', 'float16'], type=str, help='quantization type')
     parser.set_defaults(keras=False)
     args = parser.parse_args()
 
     saved_model_path = args.input
     output_path = args.output
     is_keras = args.keras
+    quant = args.quantization
     
-    tf2tflite(saved_model_path, output_path)
+    tf2tflite(saved_model_path, output_path, quantization=quant)
 
 
 
@@ -780,6 +782,22 @@ def evaluate_onnx_cmd():
     evaluate_onnx_pipeline(model_path, data_path, num_threads, batch_size, num_workers)
 
 
+def export_tf_deit():
+    from modeling.models.vit import get_deit_base, get_deit_small, get_deit_tiny
+    import tensorflow as tf
+    def add_input(model):
+        input = tf.keras.Input(shape=[3,224,224], batch_size=1)
+        output = model(input)
+        return tf.keras.Model(input, output)
+
+    deit_base = add_input(get_deit_base())
+    deit_small = add_input(get_deit_small())
+    deit_tiny = add_input(get_deit_tiny())
+
+    deit_base.save('models/tf_model/deit_base_patch16_224.tf')
+    deit_small.save('models/tf_model/deit_small_patch16_224.tf')
+    deit_tiny.save('models/tf_model/deit_tiny_patch16_224.tf')
+
 def main():
     func = sys.argv[1]
     if func == 'server_benchmark':
@@ -838,6 +856,8 @@ def main():
         evaluate_onnx_cmd()
     elif func in ['opt_onnx_transformer', 'opt_onnx', 'optimize_onnx']:
         optimize_onnx_transformer()
+    elif func == 'export_tf_deit':
+        export_tf_deit()
 
 if __name__ == '__main__':
     main()

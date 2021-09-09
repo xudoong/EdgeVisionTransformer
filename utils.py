@@ -141,7 +141,7 @@ def onnx2tflite(onnx_model_path, output_path, save_tf=False):
     print('Convert successfully.')
 
 
-def tf2tflite(saved_model_path, output_path, is_keras=False, is_keras_model=False):
+def tf2tflite(saved_model_path, output_path, is_keras=False, is_keras_model=False, quantization='None'):
     import tensorflow as tf
     # Convert the model
     if is_keras_model:
@@ -152,6 +152,15 @@ def tf2tflite(saved_model_path, output_path, is_keras=False, is_keras_model=Fals
         converter = tf.lite.TFLiteConverter.from_keras_model(model)
     else:
         converter = tf.lite.TFLiteConverter.from_saved_model(saved_model_path) # path to the SavedModel directory
+    
+    if quantization == 'float16':
+        print('Apply float16 quantization.')
+        converter.optimizations = [tf.lite.Optimize.DEFAULT]
+        converter.target_spec.support_types = [tf.float16]
+    elif quantization == 'dynamic':
+        print('Apple dynamic range quantization')
+        converter.optimizations = [tf.lite.Optimize.DEFAULT]
+
     converter.target_spec.supported_ops = [
         tf.lite.OpsSet.TFLITE_BUILTINS, # enable TensorFlow Lite ops.
         tf.lite.OpsSet.SELECT_TF_OPS # enable TensorFlow ops.

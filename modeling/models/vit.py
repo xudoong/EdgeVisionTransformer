@@ -1,8 +1,8 @@
 import tensorflow as tf
 
 from einops.layers.tensorflow import Rearrange
-from layers.transformer_encoder import TransformerEncoderBlock
-from layers.activation import gelu
+from modeling.layers.transformer_encoder import TransformerEncoderBlock
+from modeling.layers.activation import gelu
 
 
 class ViT(tf.keras.Model):
@@ -50,3 +50,11 @@ class ViT(tf.keras.Model):
 
         x = self.to_cls_token(x[:, 0]) # [b, dim]
         return self.mlp_head(x) # [b, num_classes]
+
+
+def get_deit_base():
+       return ViT(dim=768, depth=12)
+def get_deit_small():
+       return ViT(dim=384, heads=6, mlp_dim=384 * 4)
+def get_deit_tiny():
+       return ViT(dim=192, heads=3, mlp_dim=192 * 4)

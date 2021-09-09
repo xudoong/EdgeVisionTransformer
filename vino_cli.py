@@ -39,7 +39,6 @@ def model_optimize(mo_path, input_path, output_dir, batch_size=None, input_shape
 def model_optimize_cli():
     parser = get_root_parser()
     parser.add_argument('--input_path', '-i', required=True, type=str, help='model_path or the directory of models to convert.')
-    parser.add_argument('--is_dir', default=False, type=bool, help='whether input_path is dir or a single model')
     parser.add_argument('--output_dir', '-o', default='models/vino_model', type=str, help='output ir path')
     parser.add_argument('--batch_size', '-b', default=None, type=int, help='input tensor batch size')
     parser.add_argument('--input_shape', default=None, type=str, help='input tensor shape')
@@ -48,7 +47,6 @@ def model_optimize_cli():
     path_dict = process_root_args(args)
 
     input_path = args.input_path
-    is_dir = args.is_dir
     output_dir = args.output_dir
     mo_path = path_dict['mo_path']
     batch_size = args.batch_size
@@ -56,6 +54,7 @@ def model_optimize_cli():
     input_shape = None
     if args.input_shape:
         input_shape = [int(x) for x in args.input_shape.split(',')]
+    is_dir = os.path.isdir(input_path)
 
     input_list = []
     if not is_dir:
@@ -72,23 +71,41 @@ def model_optimize_cli():
 def openvino_benchmark(openvino_root_path, benchmark_app_path, model_path, niter=10, num_threads=1, batch_size=1, device='CPU'):
     # setup_envs_path = os.path.join(openvino_root_path, 'bin')
     # source_cmd = f'"{os.path.join(setup_envs_path, os.listdir(setup_envs_path)[0])}"'
-    benchmark_cmd = f'python "{benchmark_app_path}" -m "{model_path}" -niter={niter} -nireq=1 -api=sync -nthreads={num_threads} -b={batch_size} -d {device}'
+    benchmark_cmd = f'python "{benchmark_app_path}" -m "{model_path}" -niter={niter} -nthreads={num_threads} -b={batch_size} -d {device} -nireq=1 -api=sync --report_type=detailed_counters'
     # cmd = source_cmd + ' && ' + benchmark_cmd
     print(benchmark_cmd)
     os.system(benchmark_cmd)
+    if os.name == 'nt':
+        os.system('type benchmark_detailed_counters_report.csv')
+    else:
+        os.system('cat benchmark_detailed_counters_report.csv')
+
+    latency = 0.0
+    import csv 
+    with open('benchmark_detailed_counters_report.csv', 'r') as f:
+        csvreader = csv.reader(f, delimiter=';')
+        fields = next(csvreader)
+        row = None
+        for r in csvreader:
+            if len(r) and r[0].lower() == 'total':
+                row = r
+        if row: 
+            latency = float(row[4])
+
+    os.remove('benchmark_detailed_counters_report.csv')
+    os.remove('benchmark_report.csv')
+    return latency       
 
 
 def openvino_benchmark_cli():
     parser = get_root_parser()
     parser.add_argument('--model_path', '--model', '-m', required=True, type=str, help='xml openvino IR model path')
-    parser.add_argument('--num_runs', default=50, type=int, help='num of runs')
+    parser.add_argument('--num_runs', '-niter', default=50, type=int, help='num of runs')
     parser.add_argument('--num_threads', default=1, type=int, help='num of threads')
     parser.add_argument('--batch_size', '-b', default=1, type=int, help='num of threads')
     parser.add_argument('--device', '-d', default='CPU', type=str, help='device list to benchmark on')
-    parser.add_argument('--is_dir', default=False, type=bool, help='whether input_path is dir or a single model')
     args = parser.parse_args()
     
-    is_dir = args.is_dir
     path_dict = process_root_args(args)
     benchmark_app_path = path_dict['benchmark_app_path']
     openvino_root_path = path_dict['openvino_root_path']
@@ -96,6 +113,7 @@ def openvino_benchmark_cli():
     num_threads = args.num_threads
     batch_size = args.batch_size
     device = args.device
+    is_dir = os.path.isdir(args.model_path)
 
     model_list = []
     if not is_dir:
@@ -105,8 +123,22 @@ def openvino_benchmark_cli():
             if '.xml' in name:
                 model_list.append(os.path.join(args.model_path, name))
 
+    print('[ INFO ] Models to benchmark:')
+    for name in model_list:
+        print(os.path.basename(name), end='\t')
+    print('')
+    latency_list = []
+    latency_dict = {}
     for model_path in model_list:
-        openvino_benchmark(openvino_root_path, benchmark_app_path, model_path, niter=num_runs, num_threads=num_threads, batch_size=batch_size, device=device)
+        latency = openvino_benchmark(openvino_root_path, benchmark_app_path, model_path, niter=num_runs, num_threads=num_threads, batch_size=batch_size, device=device)
+        latency_list.append(latency)
+        latency_dict[os.path.basename(model_path)] = latency
+
+    print('[ BENCHMARK FINISHED ]')
+    print('')
+    print('[ SUMMARY ]')
+    print(latency_dict)
+    print(latency_list)
 
 
 if __name__ == '__main__':

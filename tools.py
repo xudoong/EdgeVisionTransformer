@@ -304,32 +304,52 @@ def export_onnx_bert_huggingface():
 
 
 
-def export_onnx_t2tvit():
-    import torch 
-    from utils import export_onnx 
+def export_onnx_t2t_vit():
+    from utils import export_onnx, import_from_path
 
 
     parser = argparse.ArgumentParser()
     parser.add_argument('func', help='specify the work to do.')
-    parser.add_argument('--output', required=True, type=str, help='output path')
-    parser.add_argument('--version', type=int, choices=[7, 10, 12, 14], required=True, help='T2T-ViT version')
+    parser.add_argument('--output', '-o', default=None, type=str, help='output path')
+    parser.add_argument('--version', '-v', type=int, choices=[7, 10, 12, 14], required=True, help='T2T-ViT version')
+    parser.add_argument('--t2t_vit_dir', default='other_codes/t2t_vit', type=str, help='T2T-ViT-main repo path')
+    parser.add_argument('--pretrained', default=False, type=bool, help='whether load weights')
+    parser.add_argument('--weight_path', '-w', default=None, type=str, help='torch state_dict path')
+    parser.add_argument('--input_shape', default='1,3,224,224', type=str, help='input image shape')
     args = parser.parse_args()
 
-    # import os, sys
-    # t2tvit_path = '/data/v-xudongwang/other_codes/T2T-ViT-main'
-    # sys.path.insert(0, t2tvit_path)
+    if args.output is None:
+        args.output = f'models/onnx_model/t2t_vit_{args.version}.onnx'
+    import os, sys
+    sys.path.insert(1, args.t2t_vit_dir)
+
     from models import t2t_vit_7, t2t_vit_10, t2t_vit_12, t2t_vit_14
 
-    if args.version == 7:
-        model = t2t_vit_7()
-    elif args.version == 10:
-        model = t2t_vit_10()
-    elif args.version == 12:
-        model = t2t_vit_12()
-    else:
-        model = t2t_vit_14()
+    weight_dict = {
+        7: 'models/torch_model/71.7_T2T_ViT_7.pth.tar',
+        10: 'models/torch_model/75.2_T2T_ViT_10.pth.tar',
+        12: 'models/torch_model/76.5_T2T_ViT_12.pth.tar',
+        14: 'models/torch_model/81.5_T2T_ViT_14.pth.tar',
+    }
+    get_model_dict = {
+        7: t2t_vit_7,
+        10: t2t_vit_10,
+        12: t2t_vit_12,
+        14: t2t_vit_14,
+    }
+    if args.weight_path is None:
+        args.weight_path = weight_dict[args.version]
 
-    export_onnx(model, args.output, [1,3,224,224])
+    model = get_model_dict[args.version]()
+
+    if args.pretrained:
+        import torch
+        state_dict = torch.load(args.weight_path)
+        state_dict = state_dict['state_dict_ema']
+        model.load_state_dict(state_dict)
+
+    input_shape = [int(x) for x in args.input_shape.split(',')]
+    export_onnx(model, args.output, input_shape)
 
 
 
@@ -471,6 +491,7 @@ def onnx2tflite_cmd():
     parser.add_argument('func', help='specify the work to do.')
     parser.add_argument('--model', required=True, type=str, help='onnx model path')
     parser.add_argument('--output', '-o', default=None, type=str, help='output tflite model path')
+    parser.add_argument('--model_home', default=None, type=str, help='root dir of models')
     parser.add_argument('--save_tf', action='store_true', dest='save_tf', help='to save tf SavedModel')
     parser.set_defaults(save_tf=False)
     args = parser.parse_args()
@@ -478,7 +499,8 @@ def onnx2tflite_cmd():
     onnx_model_path = args.model
     output_path = args.output
     save_tf = args.save_tf
-    onnx2tflite(onnx_model_path, output_path, save_tf)
+    model_home = args.model_home
+    onnx2tflite(onnx_model_path, output_path, save_tf, model_home=model_home)
 
 
 def save_vit():
@@ -822,8 +844,8 @@ def main():
         export_onnx_bert_huggingface()
     elif func == 'onnx2tflite':
         onnx2tflite_cmd()
-    elif func == 'export_onnx_t2tvit':
-        export_onnx_t2tvit()
+    elif func == 'export_onnx_t2t_vit':
+        export_onnx_t2t_vit()
     elif func == 'export_onnx_distilbert_huggingface':
         export_onnx_distilbert_huggingface()
     elif func == 'save_vit':

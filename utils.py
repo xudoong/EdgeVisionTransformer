@@ -111,10 +111,11 @@ def get_onnx_opset_version(onnx_model_path):
     return model.opset_import
 
 
-def onnx2tflite(onnx_model_path, output_path, save_tf=False):
+def onnx2tflite(onnx_model_path, output_path, save_tf=False, model_home=None):
     import os
     
-    model_home = '/data/v-xudongwang/models'
+    if model_home is None:
+       model_home = '/data/v-xudongwang/models'
     tf_prefix = os.path.join(model_home, 'tf_model')
     tflite_prefix = os.path.join(model_home, 'tflite_model')
     
@@ -130,8 +131,10 @@ def onnx2tflite(onnx_model_path, output_path, save_tf=False):
     r = os.system(f'onnx-tf convert -i {onnx_model_path} -o {tf_model_path}')
     if r:
         exit(r)
-
-    r = os.system(f'python /data/v-xudongwang/benchmark_tools/tools.py tf2tflite --input {tf_model_path} --output {tflite_model_path}')
+    
+    import sys
+    dir = os.path.dirname(sys.argv[0])
+    r = os.system(f'python {os.path.join(dir, "tools.py")} tf2tflite --input {tf_model_path} --output {tflite_model_path}')
     if r:
         if not save_tf:
             os.system(f'rm -r {tf_model_path}')
@@ -488,10 +491,24 @@ def evaluate_onnx(model_path, data_loader, threads):
 
         if total % 10 == 0:
             print (f'{total: 5d} / 50000 Accuracy: {correct / total * 100: .2f}%')
-    print(f'Evaluate accuracy: {correct / total * 100: .2f}%')
+    accuracy = correct / total * 100
+    print(f'Evaluate accuracy: {accuracy: .2f}%')
+    return accuracy
 
 
 def evaluate_onnx_pipeline(model_path, data_path, threads=8, batch_size=50, num_workers=4):
     dataset, _ = build_eval_dataset(data_path)
     data_loader = to_data_loader(dataset, batch_size, num_workers)
-    evaluate_onnx(model_path, data_loader, threads)
+    return evaluate_onnx(model_path, data_loader, threads)
+
+
+
+
+'''======================================================================================================='''
+
+def import_from_path(name, path):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(name, path)
+    foo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(foo)
+    return foo.__getattribute__(name)

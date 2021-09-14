@@ -111,10 +111,11 @@ def get_onnx_opset_version(onnx_model_path):
     return model.opset_import
 
 
-def onnx2tflite(onnx_model_path, output_path, save_tf=False):
+def onnx2tflite(onnx_model_path, output_path, save_tf=False, model_home=None):
     import os
     
-    model_home = '/data/v-xudongwang/models'
+    if model_home is None:
+       model_home = '/data/v-xudongwang/models'
     tf_prefix = os.path.join(model_home, 'tf_model')
     tflite_prefix = os.path.join(model_home, 'tflite_model')
     
@@ -130,8 +131,10 @@ def onnx2tflite(onnx_model_path, output_path, save_tf=False):
     r = os.system(f'onnx-tf convert -i {onnx_model_path} -o {tf_model_path}')
     if r:
         exit(r)
-
-    r = os.system(f'python /data/v-xudongwang/benchmark_tools/tools.py tf2tflite --input {tf_model_path} --output {tflite_model_path}')
+    
+    import sys
+    dir = os.path.dirname(sys.argv[0])
+    r = os.system(f'python {os.path.join(dir, "tools.py")} tf2tflite --input {tf_model_path} --output {tflite_model_path}')
     if r:
         if not save_tf:
             os.system(f'rm -r {tf_model_path}')
@@ -141,7 +144,7 @@ def onnx2tflite(onnx_model_path, output_path, save_tf=False):
     print('Convert successfully.')
 
 
-def tf2tflite(saved_model_path, output_path, is_keras=False, is_keras_model=False, quantization='None'):
+def tf2tflite(saved_model_path, output_path, is_keras=False, is_keras_model=False, quantization='None', use_flex=True):
     import tensorflow as tf
     # Convert the model
     if is_keras_model:
@@ -156,15 +159,17 @@ def tf2tflite(saved_model_path, output_path, is_keras=False, is_keras_model=Fals
     if quantization == 'float16':
         print('Apply float16 quantization.')
         converter.optimizations = [tf.lite.Optimize.DEFAULT]
-        converter.target_spec.support_types = [tf.float16]
+        converter.target_spec.supported_types = [tf.float16]
     elif quantization == 'dynamic':
-        print('Apple dynamic range quantization')
+        print('Apply dynamic range quantization.')
         converter.optimizations = [tf.lite.Optimize.DEFAULT]
 
-    converter.target_spec.supported_ops = [
-        tf.lite.OpsSet.TFLITE_BUILTINS, # enable TensorFlow Lite ops.
-        tf.lite.OpsSet.SELECT_TF_OPS # enable TensorFlow ops.
-    ]
+    if use_flex:
+        print('Use Flex Delegate.')
+        converter.target_spec.supported_ops = [
+            tf.lite.OpsSet.TFLITE_BUILTINS, # enable TensorFlow Lite ops.
+            tf.lite.OpsSet.SELECT_TF_OPS # enable TensorFlow ops.
+        ]
     tflite_model = converter.convert()
 
     # Save the model.
@@ -488,10 +493,88 @@ def evaluate_onnx(model_path, data_loader, threads):
 
         if total % 10 == 0:
             print (f'{total: 5d} / 50000 Accuracy: {correct / total * 100: .2f}%')
-    print(f'Evaluate accuracy: {correct / total * 100: .2f}%')
+    accuracy = correct / total * 100
+    print(f'Evaluate accuracy: {accuracy: .2f}%')
+    return accuracy
 
 
 def evaluate_onnx_pipeline(model_path, data_path, threads=8, batch_size=50, num_workers=4):
     dataset, _ = build_eval_dataset(data_path)
     data_loader = to_data_loader(dataset, batch_size, num_workers)
-    evaluate_onnx(model_path, data_loader, threads)
+    return evaluate_onnx(model_path, data_loader, threads)
+
+
+
+def run_one_tflite_inference(model_path, input_data):
+    import tensorflow as tf
+    import numpy as np
+    interpreter = tf.lite.Interpreter(model_path=model_path,
+                                  num_threads=1)
+    interpreter.allocate_tensors()
+
+    if len(input_data.shape) == 3:
+        input_data = np.expand_dims(input_data, axis=0)
+
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
+    interpreter.set_tensor(input_details[0]['index'], input_data)
+    interpreter.invoke()
+    output_data = interpreter.get_tensor(output_details[0]['index'])
+    return output_data
+
+
+
+def evaluate_tflite_pipeline(model_path, data_path, num_threads=8, num_workers=4, file=None):
+    from datetime import datetime
+    import os
+
+    s = f'{datetime.now().strftime("D%m%d %H:%M:%S")} Start evaluating {model_path} with dataset {data_path}.\n'
+    if file:
+        s += f'Logging to {file}\n'
+    print(s)
+    if file:
+        with open(file, 'a') as f:
+            f.write(s)
+
+    from multiprocessing import Pool
+    import numpy as np
+    from functools import partial
+    dataset, _ = build_eval_dataset(data_path)
+    data_loader = to_data_loader(dataset, batch_size=num_threads, num_workers=num_workers,)
+    
+    total = 0
+    correct = 0
+    for images, target in data_loader:
+        images = images.numpy()
+        with Pool(num_threads) as p:
+            logits = p.map(partial(run_one_tflite_inference, model_path), [images[i] for i in range(num_threads)])
+        logits = np.array(logits).reshape(num_threads, -1)
+        pred = np.argmax(logits, axis=1)
+
+        total += len(logits)
+        correct += np.sum(pred == target.numpy())
+
+        s = f'{datetime.now().strftime("D%m%d %H:%M:%S")} {total: 5d} / 50000 Accuracy: {correct / total * 100: .2f}%'
+        if total % min(100, int(100 // num_threads * num_threads)) == 0:
+            print (s)
+        if file:
+            with open(file, 'a') as f:
+                f.write(s)
+                f.write('\n')
+        
+    accuracy = correct / total * 100
+    print(f'Evaluate accuracy: {accuracy: .2f}%')
+    if file:
+        with open(file, 'a') as f:
+            f.write(f'Summary {os.path.basename(model_path)}\n')
+            f.write(f'Evaluate accuracy: {accuracy: .2f}%\n\n\n')
+    return accuracy
+
+'''======================================================================================================='''
+
+def import_from_path(name, path):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(name, path)
+    foo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(foo)
+    return foo.__getattribute__(name)

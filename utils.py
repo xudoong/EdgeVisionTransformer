@@ -170,6 +170,8 @@ def tf2tflite(saved_model_path, output_path, is_keras=False, is_keras_model=Fals
             tf.lite.OpsSet.TFLITE_BUILTINS, # enable TensorFlow Lite ops.
             tf.lite.OpsSet.SELECT_TF_OPS # enable TensorFlow ops.
         ]
+    else:
+        print('Not use Flex Delegate.')
     tflite_model = converter.convert()
 
     # Save the model.

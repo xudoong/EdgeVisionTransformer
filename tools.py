@@ -432,7 +432,8 @@ def tf2tflite_cmd():
     parser.add_argument('--keras', dest='keras', action='store_true')
     parser.add_argument('--quantization', default='None', choices=['None', 'dynamic', 'float16'], type=str, help='quantization type')
     parser.set_defaults(keras=False)
-    parser.add_argument('--use_flex', default=True, type=bool, help='whether to use flex op')
+    parser.add_argument('--not_use_flex', action='store_false', dest='use_flex', help='specify not to use flex op')
+    parser.set_defaults(use_flex=True)
     args = parser.parse_args()
 
     saved_model_path = args.input

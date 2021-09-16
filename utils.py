@@ -1,3 +1,16 @@
+def get_torch_deit(type, image_size=224, pretrained=True):
+    import timm
+    import torch
+
+    assert(image_size in [224, 384])
+    if image_size == 384:
+        deit_type = f'deit_{type}_patch16_384'
+    else:
+        deit_type = f'deit_{type}_patch16_224'
+    model = torch.hub.load('facebookresearch/deit:main', deit_type, pretrained=pretrained)
+    return model
+
+
 def get_mobilenetv3large():
     import tensorflow as tf
     mobilenet = tf.keras.applications.MobileNetV3Large()
@@ -572,6 +585,65 @@ def evaluate_tflite_pipeline(model_path, data_path, num_threads=8, num_workers=4
             f.write(f'Evaluate accuracy: {accuracy: .2f}%\n\n\n')
     return accuracy
 
+
+def load_torch_deit_state_dict(model, state_dict_path):
+    import torch
+    state_dict = torch.load(state_dict_path)
+    if isinstance(state_dict, dict):
+        if 'model' in state_dict.keys():
+            state_dict = state_dict['model']
+        else:
+            exit('state_dict is a dict and failed to find the key to load')
+    model.load_state_dict(state_dict)
+    print (f'Load deit state_dict from {state_dict_path}.')
+
+
+def evaluate_torch(model, data_loader, device):
+    from datetime import datetime
+    import torch
+    with torch.no_grad():
+        # switch to evaluation mode
+        model.eval()
+
+        total = 0
+        correct = 0
+        for images, target in data_loader:
+            images = images.to(device, non_blocking=True)
+            target = target.to(device, non_blocking=True)
+
+            batch_size = images.shape[0]
+            # compute output
+            with torch.cuda.amp.autocast():
+                logits = model(images)
+            logits = logits.reshape(batch_size, -1)
+            pred = torch.argmax(logits, axis=1).reshape(-1)
+            target = target.reshape(-1)
+
+            correct_tmp = int(torch.sum(pred == target).cpu().numpy())
+            correct += correct_tmp
+            total += batch_size
+            
+            s = f'[{datetime.now().strftime("D%m%d %H:%M:%S")} {total: 5d} / 50000]  Cur Accuracy: {correct_tmp / batch_size * 100: .2f}% Total Accuracy: {correct / total * 100: .2f}%'
+            print(s)
+    print(f'Summary model accuracy is {correct / total * 100: .2f}%')
+    return correct / total
+
+
+def evaluate_deit_pipeline(type, state_dict_path, data_path, pretrained=False, batch_size=50, num_workers=8):
+    import torch
+    dataset, _ = build_eval_dataset(data_path)
+    data_loader = to_data_loader(dataset, batch_size, num_workers)
+
+    model = get_torch_deit(type, pretrained=pretrained)
+    if state_dict_path:
+        load_torch_deit_state_dict(model, state_dict_path)
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = model.to(device)
+
+    return evaluate_torch(model, data_loader, device)
+
+
 '''======================================================================================================='''
 
 def import_from_path(name, path):
@@ -580,3 +652,19 @@ def import_from_path(name, path):
     foo = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(foo)
     return foo.__getattribute__(name)
+
+'''=======================================================================================================
+    prune utils
+=========================================================================================================='''
+
+def prune_deit_ffn_h(model, amount):
+    from torch.nn.utils import prune
+    for block in model.blocks:
+        mlp = block.mlp
+        fc1 = mlp.fc1   
+        fc2 = mlp.fc2
+        prune.ln_structured(fc1, 'weight', amount=amount, n=2, dim=1)
+        prune.ln_structured(fc2, 'weight', amount=amount, n=2, dim=0)
+        prune.remove(fc1, 'weight')
+        prune.remove(fc2, 'weight')
+    return 0

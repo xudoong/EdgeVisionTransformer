@@ -235,7 +235,7 @@ def export_onnx_cmd():
 
 def export_onnx_deit():
     import torch
-    from utils import export_onnx
+    from utils import export_onnx, get_torch_deit
     parser = argparse.ArgumentParser()
     parser.add_argument('func', help='specify the work to do.')
     parser.add_argument('--output', required=True, type=str, help='onnx output path')
@@ -250,12 +250,8 @@ def export_onnx_deit():
     type = args.type
     fix_batch = args.fix_batch
 
-    import timm
-    if input_shape[-1] == 384:
-      deit_type = f'deit_{type}_patch16_384'
-    else:
-      deit_type = f'deit_{type}_patch16_224'
-    model = torch.hub.load('facebookresearch/deit:main', deit_type, pretrained=True)
+
+    model = get_torch_deit(type)
     export_onnx(model, onnx_model_path, input_shape, dynamic_batch=not fix_batch)
 
 
@@ -807,7 +803,6 @@ def evaluate_onnx_cmd():
     evaluate_onnx_pipeline(model_path, data_path, num_threads, batch_size, num_workers)
 
 
-
 def evaluate_tflite_cmd():
     from utils import evaluate_tflite_pipeline
     parser = argparse.ArgumentParser()
@@ -820,6 +815,29 @@ def evaluate_tflite_cmd():
     args = parser.parse_args()
 
     evaluate_tflite_pipeline(args.model, args.data_path, args.threads, args.num_workers, args.log)
+
+
+def evaluate_deit_cmd():
+    from utils import evaluate_deit_pipeline
+    parser = argparse.ArgumentParser()
+    parser.add_argument('func', help='specify the work to do.')
+    parser.add_argument('--type', choices=['base', 'small', 'tiny'], help='deit model type')
+    parser.add_argument('--data_path', required=True, type=str, help='image net 1k dataset path')
+    parser.add_argument('--num_workers', default=4, type=int, help='num of workers to load data')
+    parser.add_argument('--batch_size', default=50, type=int, help='batch size')
+    parser.add_argument('--pretrained', action='store_true', dest='pretrained', help='specify to load offcial pretrained model')
+    parser.add_argument('--model', default=None, type=str, help='state_dict_path')
+    parser.set_defaults(pretrained=False)
+    args = parser.parse_args()
+
+    if args.pretrained is False and args.model is None:
+        exit('Either load official pretrained model or specify state_dict_path')
+        
+    evaluate_deit_pipeline(args.type, args.model, args.data_path, 
+                           pretrained=args.pretrained, 
+                           batch_size=args.batch_size,
+                           num_workers=args.num_workers)
+
 
 def export_tf_deit():
     from modeling.models.vit import get_deit_base, get_deit_small, get_deit_tiny
@@ -836,6 +854,38 @@ def export_tf_deit():
     deit_base.save('models/tf_model/deit_base_patch16_224.tf')
     deit_small.save('models/tf_model/deit_small_patch16_224.tf')
     deit_tiny.save('models/tf_model/deit_tiny_patch16_224.tf')
+
+
+def prune_deit_cmd():
+    from utils import get_torch_deit, prune_deit_ffn_h, load_torch_deit_state_dict
+    parser = argparse.ArgumentParser()
+    parser.add_argument('func', help='specify the work to do.')
+    parser.add_argument('--type', choices=['base', 'small', 'tiny'], help='deit model type')
+    parser.add_argument('--model', default=None, type=str, help='state_dict_path')
+    parser.add_argument('--amount', required=True, help='pruning amount')
+    parser.add_argument('--output', '-o', default=None, type=str, help='state_dict_path')
+    parser.add_argument('--prune_type', choices=['ffn_h', 'ffn_i'], help='deit pruning type')
+    args = parser.parse_args()
+    
+    pretrained = args.model is None
+    
+    model = get_torch_deit(args.type, pretrained=pretrained)
+    if args.model:
+        load_torch_deit_state_dict(model, args.model)
+
+    prune_deit_ffn_h(model, args.amount)
+
+    state_dict = dict(
+        model = model.state_dict(),
+        amount = args.amount,
+        prune_type = args.prune_type
+    )
+
+    if args.output is None:
+        args.output = f'models/torch_model/deit_{args.type}_prune_{args.prune_type}_amount{args.amount}.pth'
+    torch.save(state_dict, args.output)
+    print(f'Successfully save pruned deit {args.type} to {args.output}.')
+
 
 def main():
     func = sys.argv[1]
@@ -899,6 +949,10 @@ def main():
         export_tf_deit()
     elif func == 'eval_tflite':
         evaluate_tflite_cmd()
+    elif func == 'eval_deit':
+        evaluate_deit_cmd()
+    elif func == 'prune_deit':
+        prune_deit_cmd()
 
 if __name__ == '__main__':
     main()

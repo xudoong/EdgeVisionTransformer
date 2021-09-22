@@ -24,15 +24,8 @@ import numpy as np
 import torch
 from torch.optim import SGD
 
-from pytorch_pretrained_bert.tokenization import BertTokenizer
-from pytorch_pretrained_bert.modeling import (
-    BertForSequenceClassification,
-    BertConfig,
-)
-from pytorch_pretrained_bert.file_utils import PYTORCH_PRETRAINED_BERT_CACHE
-
 import classifier_args
-import classifier_data as data
+# import classifier_data as data
 from logger import logger
 import pruning
 from classifier_eval import (
@@ -41,7 +34,8 @@ from classifier_eval import (
     analyze_nli,
     predict,
 )
-import classifier_training as training
+# import classifier_training as training
+from classifier_scoring import Accuracy
 
 
 def warmup_linear(x, warmup=0.002):
@@ -141,116 +135,46 @@ def main():
 
     os.makedirs(args.output_dir, exist_ok=True)
 
-    task_name = args.task_name.lower()
+    num_labels = 1000
 
-    if task_name not in data.processors:
-        raise ValueError("Task not found: %s" % (task_name))
-
-    processor = data.processors[task_name]()
-    num_labels = data.num_labels_task[task_name]
-    label_list = processor.get_labels()
-
-    tokenizer = BertTokenizer.from_pretrained(
-        args.bert_model, do_lower_case=args.do_lower_case)
 
     # ==== PREPARE DATA ====
-
+    import sys
+    sys.path.insert(0, '/data/data1/v-xudongwang/benchmark_tools')
+    from utils import build_eval_dataset, to_data_loader
     # Train data
     if args.do_train or args.do_prune:
         # Prepare training data
         if args.dry_run:
-            train_examples = processor.get_dummy_train_examples(args.data_dir)
+            pass # TODO
         else:
-            train_examples = processor.get_train_examples(args.data_dir)
-        train_data = data.prepare_tensor_dataset(
-            train_examples,
-            label_list,
-            args.max_seq_length,
-            tokenizer,
-            verbose=args.verbose,
-        )
+            train_dataset, _ = build_eval_dataset(args.data_dir, is_train=True)
+
 
     # Eval data
     if args.do_eval or (args.do_prune and args.eval_pruned):
         if args.dry_run:
-            eval_examples = processor.get_dummy_dev_examples(args.data_dir)
+            pass # TODO
         else:
-            eval_examples = processor.get_dev_examples(args.data_dir)
-        # data.add_dependency_arcs(eval_examples)
-        # print(eval_examples[-2].parse_a)
-        eval_data = data.prepare_tensor_dataset(
-            eval_examples,
-            label_list,
-            args.max_seq_length,
-            tokenizer,
-            verbose=args.verbose,
-        )
+            eval_dataset, _ = build_eval_dataset(args.data_dir, is_train=False)
+
 
     # ==== PREPARE MODEL ====
-
-    def get_model(
-        model_type,
-        toy_classifier=False,
-        dry_run=False,
-        n_heads=1,
-        state_dict=None,
-        cache_dir=None
-    ):
-
-        if dry_run:
-            model = BertForSequenceClassification(
-                BertConfig.dummy_config(len(tokenizer.vocab)),
-                num_labels=num_labels
-            )
-        else:
-            model = BertForSequenceClassification.from_pretrained(
-                model_type,
-                cache_dir=cache_dir,
-                num_labels=num_labels,
-                state_dict=None if toy_classifier else state_dict,
-            )
-        if toy_classifier:
-            config = BertConfig(
-                len(tokenizer.vocab),
-                hidden_size=768,
-                num_hidden_layers=1,
-                num_attention_heads=n_heads,
-                intermediate_size=3072,
-                hidden_act="gelu",
-                hidden_dropout_prob=0.1,
-                attention_probs_dropout_prob=0.1,
-                max_position_embeddings=512,
-                type_vocab_size=2,
-                initializer_range=0.02
-            )
-            toy_model = BertForSequenceClassification(
-                config,
-                num_labels=num_labels
-            )
-            toy_model.bert.embeddings.load_state_dict(model.bert.embeddings.state_dict())
-            if state_dict is not None:
-                model_to_load = getattr(toy_model, "module", toy_model)
-                model_to_load.load_state_dict(state_dict)
-            model = toy_model
-
+    def get_model():
+        from transformers import ViTForImageClassification
+        model = ViTForImageClassification.from_pretrained('facebook/deit-small-patch16-224')
         return model
 
-    model = get_model(
-        args.bert_model,
-        toy_classifier=args.toy_classifier,
-        dry_run=args.dry_run,
-        n_heads=args.toy_classifier_n_heads,
-        cache_dir=PYTORCH_PRETRAINED_BERT_CACHE /
-        f"distributed_{args.local_rank}",
-    )
+    model = get_model()
     # Head dropout
-    for layer in model.bert.encoder.layer:
-        layer.attention.self.dropout.p = args.attn_dropout
+    for layer in model.vit.encoder.layer:
+        layer.attention.attention.dropout.p = args.attn_dropout
 
     if args.fp16:
         model.half()
     model.to(device)
     if args.local_rank != -1:
+        exit('Not Implemented.')
         try:
             from apex.parallel import DistributedDataParallel as DDP
         except ImportError:
@@ -270,9 +194,9 @@ def main():
     )
     # Mask heads
     if args.actually_prune:
-        model.bert.prune_heads(to_prune)
+        model.vit.prune_heads(to_prune)
     else:
-        model.bert.mask_heads(to_prune)
+        model.vit.mask_heads(to_prune)
 
 
     # ==== PREPARE TRAINING ====
@@ -293,8 +217,9 @@ def main():
         ]
     # Prepare optimizer for fine-tuning on task
     if args.do_train:
+        exit('Not Implemented.')
         num_train_steps = int(
-            len(train_examples)
+            len(train_dataset)
             / args.train_batch_size
             / args.gradient_accumulation_steps
         ) * args.num_train_epochs
@@ -314,8 +239,9 @@ def main():
     tr_loss = 0
     if args.do_train:
         # Train
+        exit('Not implemented.')
         global_step, tr_loss, nb_tr_steps = training.train(
-            train_data,
+            train_dataset,
             model,
             optimizer,
             args.train_batch_size,
@@ -343,14 +269,8 @@ def main():
         torch.save(model_to_save.state_dict(), output_model_file)
 
     # Load a trained model that you have fine-tuned
-    model_state_dict = torch.load(output_model_file)
-    model = get_model(
-        args.bert_model,
-        toy_classifier=args.toy_classifier,
-        dry_run=args.dry_run,
-        n_heads=args.toy_classifier_n_heads,
-        state_dict=model_state_dict,
-    )
+    # model_state_dict = torch.load(output_model_file)
+    
     model.to(device)
 
     is_main = args.local_rank == -1 or torch.distributed.get_rank() == 0
@@ -362,10 +282,11 @@ def main():
     )
     # Mask heads
     if args.actually_prune:
-        model.bert.prune_heads(to_prune)
+        model.vit.prune_heads(to_prune)
     else:
-        model.bert.mask_heads(to_prune)
+        model.vit.mask_heads(to_prune)
 
+    
     # ==== PRUNE ====
     if args.do_prune and is_main:
         if args.fp16:
@@ -375,8 +296,8 @@ def main():
         prune_sequence = pruning.determine_pruning_sequence(
             args.prune_number,
             args.prune_percent,
-            model.bert.config.num_hidden_layers,
-            model.bert.config.num_attention_heads,
+            model.vit.config.num_hidden_layers,
+            model.vit.config.num_attention_heads,
             args.at_least_x_heads_per_layer,
         )
         # Prepare optimizer for tuning after pruning
@@ -390,7 +311,7 @@ def main():
                 num_retrain_steps = args.n_retrain_steps_pruned_heads
             else:
                 num_retrain_steps = int(
-                    len(train_examples)
+                    len(train_dataset)
                     / args.train_batch_size
                     / args.gradient_accumulation_steps
                 ) * args.num_train_epochs
@@ -400,16 +321,19 @@ def main():
 
             if step == 0 or args.exact_pruning:
                 # Calculate importance scores for each layer
-                head_importance = calculate_head_importance(
-                    model,
-                    train_data,
-                    batch_size=args.train_batch_size,
-                    device=device,
-                    normalize_scores_by_layer=args.normalize_pruning_by_layer,
-                    subset_size=args.compute_head_importance_on_subset,
-                    verbose=True,
-                    disable_progress_bar=args.no_progress_bars,
-                )
+                if args.head_importance_file:
+                    head_importance = torch.load(args.head_importance_file)
+                else:
+                    head_importance = calculate_head_importance(
+                        model,
+                        train_dataset,
+                        batch_size=args.train_batch_size,
+                        device=device,
+                        normalize_scores_by_layer=args.normalize_pruning_by_layer,
+                        subset_size=args.compute_head_importance_on_subset,
+                        verbose=True,
+                        disable_progress_bar=args.no_progress_bars,
+                    )
                 logger.info("Head importance scores")
                 for layer in range(len(head_importance)):
                     layer_scores = head_importance[layer].cpu().data
@@ -423,14 +347,15 @@ def main():
             )
             # Actually mask the heads
             if args.actually_prune:
-                model.bert.prune_heads(to_prune)
+                model.vit.prune_heads(to_prune)
             else:
-                model.bert.mask_heads(to_prune)
+                model.vit.mask_heads(to_prune)
             # Maybe continue training a bit
             if args.n_retrain_steps_after_pruning > 0:
+                exit('Not implemented.')
                 set_seeds(args.seed + step + 1, n_gpu)
                 training.train(
-                    train_data,
+                    train_dataset,
                     model,
                     retrain_optimizer,
                     args.train_batch_size,
@@ -438,6 +363,7 @@ def main():
                     device=device,
                 )
             elif args.retrain_pruned_heads:
+                exit('Not implemented')
                 set_seeds(args.seed + step + 1, n_gpu)
                 # Reload BERT
                 base_bert = None
@@ -450,23 +376,23 @@ def main():
                     ).bert
                     base_bert.to(device)
                 # Reinit
-                model.bert.reset_heads(to_prune, base_bert)
+                model.vit.reset_heads(to_prune, base_bert)
                 # Unmask heads
-                model.bert.clear_heads_mask()
+                model.vit.clear_heads_mask()
                 if args.only_retrain_val_out:
                     self_att_params = [
-                        p for layer in model.bert.encoder.layer
+                        p for layer in model.vit.encoder.layer
                         for p in layer.attention.self.value.parameters()
                     ]
                 else:
                     self_att_params = [
-                        p for layer in model.bert.encoder.layer
+                        p for layer in model.vit.encoder.layer
                         for p in layer.attention.self.parameters()
                     ]
                 head_grouped_parameters = {
                     'params':
                         self_att_params +
-                        [p for layer in model.bert.encoder.layer
+                        [p for layer in model.vit.encoder.layer
                          for p in layer.attention.output.dense.parameters()],
                     'weight_decay': 0.01
                 }
@@ -505,26 +431,27 @@ def main():
                 logger.info("Evaluating following pruning strategy")
                 logger.info(pruning.to_pruning_descriptor(to_prune))
                 # Eval accuracy
-                metric = processor.scorer.name
+                scorer = Accuracy()
                 accuracy = evaluate(
-                    eval_data,
+                    eval_dataset,
                     model,
                     args.eval_batch_size,
                     save_attention_probs=args.save_attention_probs,
-                    print_head_entropy=True,
+                    print_head_entropy=False,
                     device=device,
-                    verbose=True,
+                    verbose=False,
                     disable_progress_bar=args.no_progress_bars,
-                    scorer=processor.scorer,
-                )[metric]
+                    scorer=scorer,
+                )[scorer.name]
                 logger.info("***** Pruning eval results *****")
                 tot_pruned = sum(len(heads) for heads in to_prune.values())
                 logger.info(f"{tot_pruned}\t{accuracy}")
 
+
     # ==== EVALUATE ====
     if args.do_eval and is_main:
         evaluate(
-            eval_data,
+            eval_dataset,
             model,
             args.eval_batch_size,
             save_attention_probs=args.save_attention_probs,
@@ -532,7 +459,7 @@ def main():
             device=device,
             result=result,
             disable_progress_bar=args.no_progress_bars,
-            scorer=processor.scorer,
+            scorer=Accuracy(),
         )
         output_eval_file = os.path.join(args.output_dir, "eval_results.txt")
         with open(output_eval_file, "w") as writer:
@@ -543,6 +470,7 @@ def main():
 
     # ==== ANALYZIS ====
     if args.do_anal:
+        exit('Not implemented.')
         if not data.is_nli_task(processor):
             logger.warn(
                 f"You are running analysis on the NLI diagnostic set but the "

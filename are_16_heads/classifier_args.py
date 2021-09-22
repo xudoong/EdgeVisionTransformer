@@ -174,6 +174,12 @@ def training_args(parser):
 def pruning_args(parser):
     prune_group = parser.add_argument_group("Pruning")
     prune_group.add_argument(
+        "--head_importance_file",
+        default=None,
+        type=str,
+        help="saved head importance file"
+    )
+    prune_group.add_argument(
         "--compute_head_importance_on_subset",
         default=1.0,
         type=float,

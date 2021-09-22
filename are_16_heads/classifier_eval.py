@@ -1,3 +1,4 @@
+from torchvision.datasets.folder import IMG_EXTENSIONS
 from tqdm import tqdm
 from itertools import islice
 import time
@@ -52,8 +53,8 @@ def evaluate(
 
     # Save entropy maybe
     if print_head_entropy:
-        n_layers = model.bert.config.num_hidden_layers
-        n_heads = model.bert.config.num_attention_heads
+        n_layers = model.vit.config.num_hidden_layers
+        n_heads = model.vit.config.num_attention_heads
         attn_entropy = torch.zeros(n_layers, n_heads).to(device)
         attn_kl = torch.zeros(n_layers, n_heads, n_heads).to(device)
         attn_distance = torch.zeros(n_layers, n_heads).to(device)
@@ -66,39 +67,37 @@ def evaluate(
     eval_iterator = tqdm(
         eval_dataloader, desc="Evaluating", disable=disable_progress_bar)
     inference_time = 0
-    for input_ids, input_mask, segment_ids, label_ids in eval_iterator:
-        input_ids = input_ids.to(device)
-        input_mask = input_mask.to(device)
-        segment_ids = segment_ids.to(device)
-        label_ids = label_ids.to(device)
+    for images, labels in eval_iterator:
+        images = images.to(device)
+        labels = labels.to(device)
 
         inference_time -= time.time()
         with torch.no_grad():
             tmp_eval_loss = model(
-                input_ids, segment_ids, input_mask, label_ids)
-            logits, attns = model(
-                input_ids, segment_ids, input_mask, return_att=True)
+                images).logits
+            logits = tmp_eval_loss
 
         logits = logits.detach().cpu().numpy()
         predictions = np.argmax(logits, axis=-1)
         inference_time += time.time()
-        label_ids = label_ids.to('cpu').numpy()
-        tmp_eval_accuracy = accuracy(logits, label_ids)
+        labels = labels.to('cpu').numpy()
+        tmp_eval_accuracy = accuracy(logits, labels)
 
         eval_loss += tmp_eval_loss.mean().item()
         eval_accuracy += tmp_eval_accuracy
 
         all_predicitions.extend(predictions)
-        all_labels.extend(label_ids)
+        all_labels.extend(labels)
 
-        nb_eval_examples += input_ids.size(0)
+        nb_eval_examples += images.shape[0]
         nb_eval_steps += 1
 
         if not print_head_entropy:
             continue
         # Record attention entropy
+        '''
         for layer, attn in enumerate(attns):
-            mask = input_mask.float()
+            mask = torch.ones_like(images)
             bsz, L = mask.size()
             # Entropy
             masked_entropy = util.head_entropy(attn) * mask.unsqueeze(1)
@@ -114,13 +113,13 @@ def evaluate(
             attn_distance[layer] += distance.sum(-1).sum(0)
             # disagreement
             attn_disagreement[layer] += util.attn_disagreement(attn).sum()
-            self_att = model.bert.encoder.layer[layer].attention.self
+            self_att = model.vit.encoder.layer[layer].attention.self
             ctx = self_att.context_layer_val
             out_disagreement[layer] += util.out_disagreement(ctx).sum()
 
             # Number of tokens
             tot_tokens += mask.detach().sum().data
-
+        
         if save_attention_probs != "":
             attns = [attn.detach().cpu() for attn in attns]
             for batch_idx in range(input_ids.size(0)):
@@ -131,6 +130,7 @@ def evaluate(
                     torch.save(attns_to_save, file)
                     attns_to_save = []
                     attn_partition += 1
+        '''
 
     eval_loss = eval_loss / nb_eval_steps
     eval_accuracy = eval_accuracy / nb_eval_examples
@@ -196,7 +196,7 @@ def calculate_head_importance(
 ):
     """Calculate head importance scores"""
     # Disable dropout
-    model.eval()
+    model.train() # TO BE FIXED
     # Device
     device = device or next(model.parameters()).device
     if subset_size <= 1:
@@ -222,27 +222,29 @@ def calculate_head_importance(
         total=n_prune_steps
     )
     # Head importance tensor
-    n_layers = model.bert.config.num_hidden_layers
-    n_heads = model.bert.config.num_attention_heads
-    head_importance = torch.zeros(n_layers, n_heads).to(device)
+    n_layers = model.vit.config.num_hidden_layers
+    n_heads = model.vit.config.num_attention_heads
+    head_importance = torch.randn(n_layers, n_heads).to(device)
     tot_tokens = 0
 
     for step, batch in enumerate(prune_iterator):
         batch = tuple(t.to(device) for t in batch)
-        input_ids, input_mask, segment_ids, label_ids = batch
+        image, label = batch
         # Compute gradients
-        loss = model(input_ids, segment_ids, input_mask, label_ids).sum()
+        loss = model(image).logits.sum()
         loss.backward()
 
-        for layer in range(model.bert.config.num_hidden_layers):
-            self_att = model.bert.encoder.layer[layer].attention.self
+        for layer in range(model.vit.config.num_hidden_layers):
+            self_att = model.vit.encoder.layer[layer].attention.attention
             ctx = self_att.context_layer_val
             grad_ctx = ctx.grad
             # Take the dot
             dot = torch.einsum("bhli,bhli->bhl", [grad_ctx, ctx])
             head_importance[layer] += dot.abs().sum(-1).sum(0).detach()
 
-        tot_tokens += input_mask.float().detach().sum().data
+        seq_len = (image.shape[2] // model.vit.config.patch_size) ** 2 + 1
+        tot_tokens += seq_len
+
     head_importance[:-1] /= tot_tokens
     head_importance[-1] /= subset_size
     # Layerwise importance normalization

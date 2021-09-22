@@ -440,7 +440,7 @@ def save_to_pb(outputs, output_path):
     evaluate model
 ========================================================================================================='''
 
-def build_eval_dataset(data_path, input_size=224):
+def build_eval_dataset(data_path, input_size=224, is_train=False):
     def build_eval_transform(input_size):
         from torchvision import transforms
         from timm.data.constants import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
@@ -459,7 +459,7 @@ def build_eval_dataset(data_path, input_size=224):
     import os
     from torchvision import datasets
     transform = build_eval_transform(input_size)
-    root = os.path.join(data_path, 'val')
+    root = os.path.join(data_path, 'val' if not is_train else 'train')
     dataset = datasets.ImageFolder(root, transform=transform)
     num_classes = 1000
     return dataset, num_classes

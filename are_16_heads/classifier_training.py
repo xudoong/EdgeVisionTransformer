@@ -92,6 +92,7 @@ def train(
     eval_mode=False,
 ):
     """Train for a fixed number of steps/epochs"""
+    model.train()
     # Device
     device = device or next(model.parameters()).device
     # Prepare data loader
@@ -99,6 +100,7 @@ def train(
         train_sampler = RandomSampler(train_data)
     else:
         train_sampler = DistributedSampler(train_data)
+    is_main = local_rank == -1 or local_rank == 0
     train_dataloader = DataLoader(
         train_data,
         sampler=train_sampler,
@@ -117,7 +119,7 @@ def train(
     else:
         n_epochs = int(np.ceil(n_steps / n_steps_per_epochs))
     # Print stuff
-    if verbose:
+    if verbose and is_main:
         logger.info("***** Running training *****")
         logger.info(f"  Num examples = {len(train_data)}")
         logger.info(f"  Batch size = {train_batch_size}")
@@ -150,10 +152,10 @@ def train(
         nb_tr_steps += epoch_nb_tr_steps
         # Total number of remaining steps
         n_remaining_steps -= n_steps_per_epochs
-        if verbose:
+        if verbose and is_main:
             logger.info(f"Epoch loss = {epoch_tr_loss / epoch_nb_tr_steps}")
     # Print some info
-    if verbose:
+    if verbose and is_main:
         logger.info("***** Finished training *****")
         logger.info(f"  Global step = {len(train_data)}")
         logger.info(f"  Training loss = {tr_loss/nb_tr_steps:.3f}")

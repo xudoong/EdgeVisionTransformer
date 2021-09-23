@@ -1,5 +1,7 @@
 import argparse
 
+from torch._C import default_generator
+
 
 def get_base_parser():
     parser = argparse.ArgumentParser()
@@ -328,4 +330,17 @@ def fp16_args(parser):
         "Only used when fp16 set to True.\n"
         "0 (default value): dynamic loss scaling.\n"
         "Positive power of 2: static loss scaling value.\n"
+    )
+
+def export_onnx_args(parser):
+    onnx_group = parser.add_argument_group('ONNX')
+    onnx_group.add_argument(
+        '--export_onnx',
+        action='store_true',
+        help='whether to export pruned torch model to onnx'
+    )
+    onnx_group.add_argument(
+        '--onnx_output_dir',
+        default='/data/data1/v-xudongwang/models/onnx_model',
+        help='onnx model output directory'
     )

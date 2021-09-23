@@ -23,6 +23,7 @@ import tempfile
 import numpy as np
 import torch
 from torch.optim import SGD
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 import classifier_args
 # import classifier_data as data
@@ -56,6 +57,13 @@ def prepare_dry_run(args):
     return args
 
 
+def prune_head_plus_ddp(model, to_prune, is_ddp):
+    model.vit.prune_heads(to_prune)
+    if is_ddp:
+        model = DDP(model.vit)
+        model.vit = model.module 
+    return model
+
 def main():
     # Arguments
     parser = classifier_args.get_base_parser()
@@ -64,6 +72,7 @@ def main():
     classifier_args.pruning_args(parser)
     classifier_args.eval_args(parser)
     classifier_args.analysis_args(parser)
+    classifier_args.export_onnx_args(parser)
 
     args = parser.parse_args()
 
@@ -100,7 +109,10 @@ def main():
             "--n_retrain_steps_after_pruning and --retrain_pruned_heads are "
             "mutually exclusive"
         )
-
+    if torch.cuda.device_count() > 1 and args.export_onnx:
+        raise ValueError(
+            'Only allowed to export_onnx without data parallelism.'
+        )
     # ==== SETUP DEVICE ====
 
     if args.local_rank == -1 or args.no_cuda:
@@ -182,13 +194,14 @@ def main():
         #         "Please install apex from https://www.github.com/nvidia/apex "
         #         "to use distributed and fp16 training."
         #     )
-        from torch.nn.parallel import DistributedDataParallel as DDP
         model = DDP(model)
+        model.vit = model.module
 
     elif n_gpu > 1:
-        exit('To be fixed.')
         model = torch.nn.DataParallel(model)
+        model.vit = model.module
 
+    '''
     # Parse pruning descriptor
     to_prune = pruning.parse_head_pruning_descriptors(
         args.attention_mask_heads,
@@ -199,7 +212,7 @@ def main():
         model.vit.prune_heads(to_prune)
     else:
         model.vit.mask_heads(to_prune)
-
+    '''
 
     # ==== PREPARE TRAINING ====
 
@@ -277,6 +290,7 @@ def main():
 
     is_main = args.local_rank == -1 or torch.distributed.get_rank() == 0
 
+    '''
     # Parse pruning descriptor
     to_prune = pruning.parse_head_pruning_descriptors(
         args.attention_mask_heads,
@@ -287,10 +301,10 @@ def main():
         model.vit.prune_heads(to_prune)
     else:
         model.vit.mask_heads(to_prune)
-
+    '''
     
     # ==== PRUNE ====
-    if args.do_prune and is_main:
+    if args.do_prune:
         if args.fp16:
             raise NotImplementedError("FP16 is not yet supported for pruning")
 
@@ -326,9 +340,12 @@ def main():
                 if args.head_importance_file:
                     # load txt file
                     assert(args.head_importance_file.endswith('.txt'))
-                    logger.info(f'Load head_importance_score from {args.head_importance_file}')
+                    if is_main:
+                        logger.info(f'Load head_importance_score from {args.head_importance_file}')
                     head_importance = torch.from_numpy(np.loadtxt(args.head_importance_file, dtype=np.float32))
                 else:
+                    if args.local_rank != -1:
+                        raise NotImplementedError('Distributed calculate head importance has not been implemented.')
                     head_importance = calculate_head_importance(
                         model,
                         train_dataset,
@@ -339,10 +356,11 @@ def main():
                         verbose=True,
                         disable_progress_bar=args.no_progress_bars,
                     )
-                logger.info("Head importance scores")
-                for layer in range(len(head_importance)):
-                    layer_scores = head_importance[layer].cpu().data
-                    logger.info("\t".join(f"{x:.5f}" for x in layer_scores))
+                if is_main:
+                    logger.info("Head importance scores")
+                    for layer in range(len(head_importance)):
+                        layer_scores = head_importance[layer].cpu().data
+                        logger.info("\t".join(f"{x:.5f}" for x in layer_scores))
             # Determine which heads to prune
             to_prune = pruning.what_to_prune(
                 head_importance,
@@ -352,7 +370,7 @@ def main():
             )
             # Actually mask the heads
             if args.actually_prune:
-                model.vit.prune_heads(to_prune)
+                model = prune_head_plus_ddp(model, to_prune, is_ddp=args.local_rank != -1)
             else:
                 model.vit.mask_heads(to_prune)
             # Maybe continue training a bit
@@ -365,7 +383,8 @@ def main():
                     args.train_batch_size,
                     n_steps=args.n_retrain_steps_after_pruning,
                     device=device,
-                    verbose=True
+                    verbose=True,
+                    local_rank=args.local_rank
                 )
             elif args.retrain_pruned_heads:
                 exit('Not implemented')
@@ -430,11 +449,20 @@ def main():
                     eval_mode=args.no_dropout_in_retraining,
                 )
 
+            if args.export_onnx:
+                from utils import export_onnx
+                total_pruned = sum(len(heads) for heads in to_prune.values())
+                export_onnx(torch_model=model.to(torch.device('cpu')),
+                            output_path=os.path.join(args.onnx_output_dir, f'deit_{args.deit_type}_are16heads_prune{total_pruned}.onnx'),
+                            input_shape=[1,3,224,224],
+                            dynamic_batch=True)
+
             # Evaluate
             if args.eval_pruned:
                 # Print the pruning descriptor
-                logger.info("Evaluating following pruning strategy")
-                logger.info(pruning.to_pruning_descriptor(to_prune))
+                if is_main:
+                    logger.info("Evaluating following pruning strategy")
+                    logger.info(pruning.to_pruning_descriptor(to_prune))
                 # Eval accuracy
                 scorer = Accuracy()
                 accuracy = evaluate(
@@ -447,14 +475,17 @@ def main():
                     verbose=False,
                     disable_progress_bar=args.no_progress_bars,
                     scorer=scorer,
+                    distributed=args.local_rank != -1
                 )[scorer.name]
-                logger.info("***** Pruning eval results *****")
-                tot_pruned = sum(len(heads) for heads in to_prune.values())
-                logger.info(f"{tot_pruned}\t{accuracy}")
+
+                if is_main:
+                    logger.info("***** Pruning eval results *****")
+                    tot_pruned = sum(len(heads) for heads in to_prune.values())
+                    logger.info(f"{tot_pruned}\t{accuracy}")
 
 
     # ==== EVALUATE ====
-    if args.do_eval and is_main:
+    if args.do_eval:
         evaluate(
             eval_dataset,
             model,
@@ -465,17 +496,19 @@ def main():
             result=result,
             disable_progress_bar=args.no_progress_bars,
             scorer=Accuracy(),
+            distributed=args.local_rank != -1
         )
-        output_eval_file = os.path.join(args.output_dir, "eval_results.txt")
-        with open(output_eval_file, "w") as writer:
-            logger.info("***** Eval results *****")
-            for key in sorted(result.keys()):
-                logger.info("  %s = %s", key, str(result[key]))
-                writer.write("%s = %s\n" % (key, str(result[key])))
+        if is_main:
+            output_eval_file = os.path.join(args.output_dir, "eval_results.txt")
+            with open(output_eval_file, "w") as writer:
+                logger.info("***** Eval results *****")
+                for key in sorted(result.keys()):
+                    logger.info("  %s = %s", key, str(result[key]))
+                    writer.write("%s = %s\n" % (key, str(result[key])))
 
     # ==== ANALYZIS ====
     if args.do_anal:
-        exit('Not implemented.')
+        raise NotImplementedError('--args.do_anal part not implemented.')
         if not data.is_nli_task(processor):
             logger.warn(
                 f"You are running analysis on the NLI diagnostic set but the "

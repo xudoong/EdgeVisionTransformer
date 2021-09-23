@@ -6,6 +6,7 @@ import time
 import numpy as np
 import torch
 import torch.nn.functional as F
+import torch.distributed as dist
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, DistributedSampler
 
 from logger import logger
@@ -149,6 +150,15 @@ def evaluate(
         all_labels = np.asarray(all_labels)
         result[scorer.name] = scorer(all_predicitions, all_labels)
 
+    # reduce when distributed
+    if dist:
+        score = torch.tensor(result[scorer.name]).to(device)
+        dist.reduce(score, 0, dist.ReduceOp.SUM)
+        if dist.get_rank() == 0:
+            score /= dist.get_world_size()
+        result[scorer.name] = score.item()
+                    
+    '''
     if print_head_entropy and verbose:
         # Print layer/headwise entropy
         print("Head entropy")
@@ -185,7 +195,7 @@ def evaluate(
     if save_attention_probs != "":
         torch.save(attns_to_save,
                    f"{save_attention_probs}.{attn_partition}")
-
+    '''
     return result
 
 

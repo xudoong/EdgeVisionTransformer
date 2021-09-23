@@ -34,7 +34,7 @@ from classifier_eval import (
     analyze_nli,
     predict,
 )
-# import classifier_training as training
+import classifier_training as training
 from classifier_scoring import Accuracy
 
 
@@ -141,7 +141,7 @@ def main():
     # ==== PREPARE DATA ====
     import sys
     sys.path.insert(0, '/data/data1/v-xudongwang/benchmark_tools')
-    from utils import build_eval_dataset, to_data_loader
+    from utils import build_eval_dataset
     # Train data
     if args.do_train or args.do_prune:
         # Prepare training data
@@ -357,7 +357,6 @@ def main():
                 model.vit.mask_heads(to_prune)
             # Maybe continue training a bit
             if args.n_retrain_steps_after_pruning > 0:
-                exit('Not implemented.')
                 set_seeds(args.seed + step + 1, n_gpu)
                 training.train(
                     train_dataset,
@@ -366,6 +365,7 @@ def main():
                     args.train_batch_size,
                     n_steps=args.n_retrain_steps_after_pruning,
                     device=device,
+                    verbose=True
                 )
             elif args.retrain_pruned_heads:
                 exit('Not implemented')

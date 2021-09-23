@@ -7,7 +7,6 @@ from torch.utils.data import DataLoader, RandomSampler
 from torch.utils.data.distributed import DistributedSampler
 
 from logger import logger
-from pytorch_pretrained_bert.optimization import BertAdam
 
 
 def warmup_linear(x, warmup=0.002):
@@ -15,7 +14,7 @@ def warmup_linear(x, warmup=0.002):
         return x/warmup
     return 1.0 - x
 
-
+'''
 def prepare_bert_adam(
     optimizer_grouped_parameters,
     learning_rate,
@@ -71,7 +70,7 @@ def prepare_bert_adam(
         return learning_rate * scale
 
     return optimizer, lr_schedule
-
+'''
 
 def train(
     train_data,
@@ -151,6 +150,8 @@ def train(
         nb_tr_steps += epoch_nb_tr_steps
         # Total number of remaining steps
         n_remaining_steps -= n_steps_per_epochs
+        if verbose:
+            logger.info(f"Epoch loss = {epoch_tr_loss / epoch_nb_tr_steps}")
     # Print some info
     if verbose:
         logger.info("***** Finished training *****")
@@ -197,10 +198,12 @@ def train_epoch(
     nb_tr_examples, nb_tr_steps = 0, 0
     for step, batch in enumerate(train_iterator):
         batch = tuple(t.to(device) for t in batch)
-        input_ids, input_mask, segment_ids, label_ids = batch
-        loss = model(input_ids, segment_ids, input_mask, label_ids)
-        if n_gpu > 1:
-            loss = loss.mean()  # mean() to average on multi-gpu.
+        images, labels = batch
+        logits = model(images).logits
+     
+        loss_func = torch.nn.CrossEntropyLoss()
+        loss = loss_func(logits, labels) 
+
         if gradient_accumulation_steps > 1:
             loss = loss / gradient_accumulation_steps
 
@@ -210,7 +213,7 @@ def train_epoch(
             loss.backward()
         # Track loss
         tr_loss += loss.item()
-        nb_tr_examples += input_ids.size(0)
+        nb_tr_examples += images.size(0)
         nb_tr_steps += 1
         if (step + 1) % gradient_accumulation_steps == 0:
             # LR scheduling

@@ -1,8 +1,10 @@
 #!/bin/bash
 
 OPTIONS="${@:1}"
-# expected options: --deit_type base|small|tiny  --prune_number `seq 0 132|60|24` --head_importance_file
-
+# expected options: 
+# 1. Eval only: --deit_type base|small|tiny  --prune_number `seq 0 132|60|24` --head_importance_file xxx
+# 2. Retrain: --deit_type base|small|tiny  --prune_number `seq 0 132|60|24` --head_importance_file xxx \
+#    --train_batch_size 100 --n_retrain_steps_after_pruning  12800 * n_epochs --retrain_learning_rate 1e-3
 function run_eval () {
     python /data/data1/v-xudongwang/benchmark_tools/are_16_heads/run_classifier.py \
     --task_name "ImageNet1K" \

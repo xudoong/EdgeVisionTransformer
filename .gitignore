@@ -1,4 +1,5 @@
 vit_model.py
 vit_huggingface.py
 play.py
+**/foo.sh
 **/__pycache__

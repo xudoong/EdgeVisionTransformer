@@ -6,7 +6,7 @@ import time
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, DistributedSampler
 
 from logger import logger
 import util
@@ -28,9 +28,14 @@ def evaluate(
         verbose=True,
         disable_progress_bar=False,
         scorer=None,
+        distributed=False,
 ):
     """Evaluate the model's accuracy"""
-    eval_sampler = SequentialSampler(eval_data)
+    if distributed:
+        eval_sampler = DistributedSampler(eval_data)
+    else:
+        eval_sampler = SequentialSampler(eval_data)
+        
     eval_dataloader = DataLoader(
         eval_data, sampler=eval_sampler, batch_size=eval_batch_size)
 

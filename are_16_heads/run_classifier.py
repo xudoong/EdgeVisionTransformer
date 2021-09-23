@@ -162,10 +162,11 @@ def main():
     # ==== PREPARE MODEL ====
     def get_model():
         from transformers import ViTForImageClassification
-        model = ViTForImageClassification.from_pretrained('facebook/deit-small-patch16-224')
+        model = ViTForImageClassification.from_pretrained(f'facebook/deit-{args.deit_type}-patch16-224')
         return model
 
     model = get_model()
+
     # Head dropout
     for layer in model.vit.encoder.layer:
         layer.attention.attention.dropout.p = args.attn_dropout
@@ -174,17 +175,18 @@ def main():
         model.half()
     model.to(device)
     if args.local_rank != -1:
-        exit('Not Implemented.')
-        try:
-            from apex.parallel import DistributedDataParallel as DDP
-        except ImportError:
-            raise ImportError(
-                "Please install apex from https://www.github.com/nvidia/apex "
-                "to use distributed and fp16 training."
-            )
-
+        # try:
+        #     from apex.parallel import DistributedDataParallel as DDP
+        # except ImportError:
+        #     raise ImportError(
+        #         "Please install apex from https://www.github.com/nvidia/apex "
+        #         "to use distributed and fp16 training."
+        #     )
+        from torch.nn.parallel import DistributedDataParallel as DDP
         model = DDP(model)
+
     elif n_gpu > 1:
+        exit('To be fixed.')
         model = torch.nn.DataParallel(model)
 
     # Parse pruning descriptor
@@ -322,7 +324,10 @@ def main():
             if step == 0 or args.exact_pruning:
                 # Calculate importance scores for each layer
                 if args.head_importance_file:
-                    head_importance = torch.load(args.head_importance_file)
+                    # load txt file
+                    assert(args.head_importance_file.endswith('.txt'))
+                    logger.info(f'Load head_importance_score from {args.head_importance_file}')
+                    head_importance = torch.from_numpy(np.loadtxt(args.head_importance_file, dtype=np.float32))
                 else:
                     head_importance = calculate_head_importance(
                         model,

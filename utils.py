@@ -280,7 +280,7 @@ def get_ffn_plus_input(h=768, i=3072, n=128, is_tf=True, only_ffn=False):
         return ffn
 
 
-def fetch_latency_std(file_path, begin_line=0, end_line=None, precision=2, only_latency=True):
+def fetch_latency_std(file_path, begin_line=0, end_line=None, precision=2, only_latency=False):
     f = open(file_path)
     if end_line is None:
         lines = f.readlines()[begin_line:]

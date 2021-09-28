@@ -1,4 +1,5 @@
 import argparse
+from enum import IntEnum
 
 from torch._C import default_generator
 
@@ -133,6 +134,12 @@ def get_base_parser():
 def training_args(parser):
     train_group = parser.add_argument_group("Training")
     train_group.add_argument(
+        '--num_workers',
+        default=8,
+        type=int,
+        help='Number of workers to load data'
+    )
+    train_group.add_argument(
         "--train_batch_size",
         default=32,
         type=int,
@@ -181,6 +188,11 @@ def training_args(parser):
 
 def pruning_args(parser):
     prune_group = parser.add_argument_group("Pruning")
+    prune_group.add_argument(
+        '--no_iterative_pruning',
+        action='store_true',
+        help='Discard the prev retrained model in every iteration.'
+    )
     prune_group.add_argument(
         "--head_importance_file",
         default=None,
@@ -242,8 +254,14 @@ def pruning_args(parser):
     prune_group.add_argument(
         "--n_retrain_steps_after_pruning",
         type=int,
-        default=0,
+        default=None,
         help="Retrain the network after pruning for a fixed number of steps"
+    )
+    prune_group.add_argument(
+        '--n_retrain_epochs_after_pruning',
+        type=int,
+        default=None,
+        help='Retrain the network after pruning for aa fixed number of epochs'
     )
     prune_group.add_argument(
         "--retrain_learning_rate",
@@ -343,4 +361,24 @@ def export_onnx_args(parser):
         '--onnx_output_dir',
         default='/data/data1/v-xudongwang/models/onnx_model',
         help='onnx model output directory'
+    )
+
+def finetune_args(parser: argparse.ArgumentParser):
+    finetune_group = parser.add_argument_group('Finetune')
+    finetune_group.add_argument(
+        '--n_finetune_epochs_after_pruning',
+        default=None,
+        type=int,
+        help='Finetune the pruned (or retrained) model for a fixed number of epochs'
+    )
+    finetune_group.add_argument(
+        '--eval_finetuned',
+        action='store_true',
+        help='Evaluate the finetuned model.'
+    )
+    finetune_group.add_argument(
+        '--finetune_learning_rate',
+        default=0.00005,
+        type=float,
+        help='Finetune learning rate'
     )

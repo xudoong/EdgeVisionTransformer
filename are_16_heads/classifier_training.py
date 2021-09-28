@@ -14,63 +14,6 @@ def warmup_linear(x, warmup=0.002):
         return x/warmup
     return 1.0 - x
 
-'''
-def prepare_bert_adam(
-    optimizer_grouped_parameters,
-    learning_rate,
-    num_train_steps,
-    warmup_proportion,
-    loss_scale=0,
-    local_rank=-1,
-    fp16=False,
-    sgd=False,
-):
-    """Set up the Adam variant for BERT and the learning rate scheduler"""
-    # Prepare optimizer
-    t_total = num_train_steps
-    # Distributed gimmicks
-    if local_rank != -1:
-        t_total = t_total // torch.distributed.get_world_size()
-    # FP16 gimmicks
-    if fp16:
-        try:
-            from apex.optimizers import FP16_Optimizer
-            from apex.optimizers import FusedAdam
-        except ImportError:
-            raise ImportError(
-                "Please install apex from https://www.github.com/nvidia/apex "
-                "to use distributed and fp16 training."
-            )
-
-        optimizer = FusedAdam(optimizer_grouped_parameters,
-                              lr=learning_rate,
-                              bias_correction=False,
-                              max_grad_norm=1.0)
-        if loss_scale == 0:
-            optimizer = FP16_Optimizer(optimizer, dynamic_loss_scale=True)
-        else:
-            optimizer = FP16_Optimizer(optimizer, static_loss_scale=loss_scale)
-    else:
-        if sgd:
-            optimizer = torch.optim.SGD(
-                optimizer_grouped_parameters,
-                lr=learning_rate,
-            )
-        else:
-            optimizer = BertAdam(
-                optimizer_grouped_parameters,
-                lr=learning_rate,
-                warmup=warmup_proportion,
-                t_total=t_total
-            )
-    # LR schedule
-
-    def lr_schedule(global_step):
-        scale = warmup_linear(global_step / t_total, warmup_proportion)
-        return learning_rate * scale
-
-    return optimizer, lr_schedule
-'''
 
 def train(
     train_data,
@@ -84,13 +27,18 @@ def train(
     n_gpu=0,
     global_step=0,
     lr_schedule=None,
-    n_epochs=1,
+    n_epochs=None,
     local_rank=-1,
     n_steps=None,
     fp16=False,
     mask_heads_grad=None,
     eval_mode=False,
+    num_workers=0,
 ):
+    if not (n_steps or n_epochs):
+        Warning('Train: both n_steps and n_epochs are None, set n_epochs=1.')
+        n_epochs=1
+        
     """Train for a fixed number of steps/epochs"""
     model.train()
     # Device
@@ -104,7 +52,8 @@ def train(
     train_dataloader = DataLoader(
         train_data,
         sampler=train_sampler,
-        batch_size=train_batch_size
+        batch_size=train_batch_size,
+        num_workers=num_workers
     )
     # Number of training steps
     n_steps_per_epochs = int(
@@ -192,7 +141,7 @@ def train_epoch(
         train_dataloader = islice(train_dataloader, n_steps)
     train_iterator = tqdm(
         train_dataloader,
-        desc="Iteration",
+        desc="Training",
         disable=disable_progress_bar,
         total=n_steps,
     )

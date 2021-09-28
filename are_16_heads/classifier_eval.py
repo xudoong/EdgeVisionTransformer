@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, Distr
 
 from logger import logger
 import util
+from util import get_vit_config, get_vit_encoder
 
 
 def accuracy(out, labels):
@@ -30,6 +31,7 @@ def evaluate(
         disable_progress_bar=False,
         scorer=None,
         distributed=False,
+        num_workers=0,
 ):
     """Evaluate the model's accuracy"""
     if distributed:
@@ -38,7 +40,7 @@ def evaluate(
         eval_sampler = SequentialSampler(eval_data)
         
     eval_dataloader = DataLoader(
-        eval_data, sampler=eval_sampler, batch_size=eval_batch_size)
+        eval_data, sampler=eval_sampler, batch_size=eval_batch_size, num_workers=num_workers)
 
     if verbose:
         logger.info("***** Running evaluation *****")
@@ -52,22 +54,7 @@ def evaluate(
     # Run prediction for full data
     eval_loss, eval_accuracy = 0, 0
     nb_eval_steps, nb_eval_examples = 0, 0
-    if save_attention_probs != "":
-        example_idx = 0
-        attn_partition = 1
-        attns_to_save = []
 
-    # Save entropy maybe
-    if print_head_entropy:
-        n_layers = model.vit.config.num_hidden_layers
-        n_heads = model.vit.config.num_attention_heads
-        attn_entropy = torch.zeros(n_layers, n_heads).to(device)
-        attn_kl = torch.zeros(n_layers, n_heads, n_heads).to(device)
-        attn_distance = torch.zeros(n_layers, n_heads).to(device)
-        attn_disagreement = torch.zeros(n_layers).to(device)
-        out_disagreement = torch.zeros(n_layers).to(device)
-
-    tot_tokens = 0
     all_predicitions = []
     all_labels = []
     eval_iterator = tqdm(
@@ -98,46 +85,6 @@ def evaluate(
         nb_eval_examples += images.shape[0]
         nb_eval_steps += 1
 
-        if not print_head_entropy:
-            continue
-        # Record attention entropy
-        '''
-        for layer, attn in enumerate(attns):
-            mask = torch.ones_like(images)
-            bsz, L = mask.size()
-            # Entropy
-            masked_entropy = util.head_entropy(attn) * mask.unsqueeze(1)
-            attn_entropy[layer] += masked_entropy.sum(-1).sum(0).detach()
-            # KL
-            masked_kl = util.head_pairwise_kl(attn) * mask.view(bsz, 1, 1, L)
-            attn_kl[layer] += masked_kl.sum(-1).sum(0).detach()
-            # Avg distance
-            attn_pointer = attn.argmax(dim=-1).float()
-            self_pos = torch.arange(attn.size(2)).to(
-                device).view(1, 1, -1).float()
-            distance = torch.abs(self_pos - attn_pointer) * mask.unsqueeze(1)
-            attn_distance[layer] += distance.sum(-1).sum(0)
-            # disagreement
-            attn_disagreement[layer] += util.attn_disagreement(attn).sum()
-            self_att = model.vit.encoder.layer[layer].attention.self
-            ctx = self_att.context_layer_val
-            out_disagreement[layer] += util.out_disagreement(ctx).sum()
-
-            # Number of tokens
-            tot_tokens += mask.detach().sum().data
-        
-        if save_attention_probs != "":
-            attns = [attn.detach().cpu() for attn in attns]
-            for batch_idx in range(input_ids.size(0)):
-                attns_to_save.append([attn[batch_idx] for attn in attns])
-                example_idx += 1
-                if (example_idx + 1) % 100 == 0:
-                    file = f"{save_attention_probs}.{attn_partition}"
-                    torch.save(attns_to_save, file)
-                    attns_to_save = []
-                    attn_partition += 1
-        '''
-
     eval_loss = eval_loss / nb_eval_steps
     eval_accuracy = eval_accuracy / nb_eval_examples
     result = result or {}
@@ -151,51 +98,13 @@ def evaluate(
         result[scorer.name] = scorer(all_predicitions, all_labels)
 
     # reduce when distributed
-    if dist:
+    if distributed:
         score = torch.tensor(result[scorer.name]).to(device)
         dist.reduce(score, 0, dist.ReduceOp.SUM)
         if dist.get_rank() == 0:
             score /= dist.get_world_size()
         result[scorer.name] = score.item()
                     
-    '''
-    if print_head_entropy and verbose:
-        # Print layer/headwise entropy
-        print("Head entropy")
-        attn_entropy /= tot_tokens.float()
-        util.print_2d_tensor(attn_entropy)
-
-        # Print pairwise layer kl
-        print("Pairwise head KL")
-        attn_kl /= tot_tokens.float()
-        for layer in range(len(attn_kl)):
-            print("Layer", layer)
-            for head in range(len(attn_kl[layer])):
-                head_kl = attn_kl[layer, head].cpu().data
-                print("\t".join(f"{kl:.5f}" for kl in head_kl))
-
-        print("Average pairwise head KL per layer")
-        attn_entropy /= tot_tokens.float()
-        util.print_1d_tensor(attn_kl.mean(-1).mean(-1))
-
-        # Print layer/headwise entropy
-        print("Average attention distance")
-        attn_distance /= tot_tokens.float()
-        util.print_2d_tensor(attn_distance)
-
-        print("Head attention disagreement")
-        attn_disagreement /= len(eval_data)
-        util.print_1d_tensor(attn_disagreement)
-
-        print("Head output disagreement")
-        out_disagreement /= tot_tokens.float()
-        util.print_1d_tensor(out_disagreement)
-        
-
-    if save_attention_probs != "":
-        torch.save(attns_to_save,
-                   f"{save_attention_probs}.{attn_partition}")
-    '''
     return result
 
 
@@ -208,6 +117,9 @@ def calculate_head_importance(
         verbose=True,
         disable_progress_bar=False,
         subset_size=1.0,
+        distributed=False,
+        num_workers=0,
+        pruned_heads=None
 ):
     """Calculate head importance scores"""
     # Disable dropout
@@ -217,29 +129,41 @@ def calculate_head_importance(
     if subset_size <= 1:
         subset_size *= len(data)
     n_prune_steps = int(np.ceil(int(subset_size) / batch_size))
-    if verbose:
+    if verbose and (not distributed or dist.get_rank() == 0):
         logger.info("***** Calculating head importance *****")
         logger.info(f"  Num examples = {len(data)}")
         logger.info(f"  Batch size = {batch_size}")
         logger.info(f"  Num steps = {n_prune_steps}")
-
+        if distributed:
+            logger.info(f'  Distributed mode, world size = {dist.get_world_size()}')
+        else:
+            logger.info(f'  Not in distributed mode.')
+    
     # Prepare data loader
-    sampler = RandomSampler(data)
-    dataloader = islice(DataLoader(
+    if not distributed:
+        sampler = RandomSampler(data)
+    else:
+        sampler = DistributedSampler(data)
+
+    dataloader = DataLoader(
         data,
         sampler=sampler,
-        batch_size=batch_size
-    ), n_prune_steps)
+        batch_size=batch_size,
+        num_workers=num_workers
+    )
+    if subset_size < 1:
+        dataloader = islice(dataloader, n_prune_steps)
     prune_iterator = tqdm(
         dataloader,
-        desc="Iteration",
+        desc="[Cal-head-importance-iteration]",
         disable=disable_progress_bar,
-        total=n_prune_steps
     )
     # Head importance tensor
-    n_layers = model.vit.config.num_hidden_layers
-    n_heads = model.vit.config.num_attention_heads
-    head_importance = torch.randn(n_layers, n_heads).to(device)
+    config = get_vit_config(model)
+    n_layers = config.num_hidden_layers
+    n_heads = config.num_attention_heads
+    seq_len = 197
+    head_importance = torch.zeros(n_layers, n_heads).to(device)
     tot_tokens = 0
 
     for step, batch in enumerate(prune_iterator):
@@ -249,16 +173,39 @@ def calculate_head_importance(
         loss = model(image).logits.sum()
         loss.backward()
 
-        for layer in range(model.vit.config.num_hidden_layers):
-            self_att = model.vit.encoder.layer[layer].attention.attention
+        for layer in range(n_layers):
+            encoder = get_vit_encoder(model)
+            self_att = encoder.layer[layer].attention.attention
             ctx = self_att.context_layer_val
             grad_ctx = ctx.grad
+            
             # Take the dot
             dot = torch.einsum("bhli,bhli->bhl", [grad_ctx, ctx])
-            head_importance[layer] += dot.abs().sum(-1).sum(0).detach()
+            dot = dot.abs().sum(-1).sum(0).detach()
+            
+            # map remaining heads after exact pruning to original index
+            if dot.shape[0] != n_heads:
+                if pruned_heads is None:
+                    raise RuntimeError('Must provide pruned_heads when useing exact pruning')
+                appended_dot = torch.zeros(n_heads).to(device)
+                pruned = sorted(list(pruned_heads[layer]))
+                dot_i = 0
+                for i in range(n_heads):
+                    if i in pruned: continue
+                    appended_dot[i] = dot[dot_i]
+                    dot_i += 1
+                head_importance[layer] += appended_dot
+            else:
+                head_importance[layer] += dot
 
-        seq_len = (image.shape[2] // model.vit.config.patch_size) ** 2 + 1
         tot_tokens += seq_len
+
+    if distributed:
+        dist.all_reduce(head_importance, op=dist.ReduceOp.SUM)
+        
+        tot_tokens_tensor = torch.tensor(tot_tokens).to(device)
+        dist.all_reduce(tot_tokens_tensor, op=dist.ReduceOp.SUM)
+        tot_tokens = tot_tokens_tensor.item()
 
     head_importance[:-1] /= tot_tokens
     head_importance[-1] /= subset_size

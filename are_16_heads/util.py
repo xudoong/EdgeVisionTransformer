@@ -47,3 +47,20 @@ def print_2d_tensor(tensor):
 
 def none_if_empty(string):
     return string if string != "" else None
+
+
+def get_vit_encoder(model):
+    if hasattr(model, 'vit'):
+        return model.vit.encoder
+    if hasattr(model, 'module'):
+        return model.module.vit.encoder
+    else:
+        raise RuntimeError('Model neither has attribute "vit" or "module".')
+
+def get_vit_config(model):
+    if hasattr(model, 'vit'):
+        return model.vit.config 
+    if hasattr(model, 'module'):
+        return model.module.vit.config
+    else:
+        raise RuntimeError('Model neither has attribute "vit" or "module".')

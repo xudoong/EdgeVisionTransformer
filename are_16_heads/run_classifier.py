@@ -17,8 +17,10 @@
 """BERT finetuning runner."""
 
 import os
+from posixpath import ismount
 import random
 import tempfile
+from threading import local
 
 import numpy as np
 import torch
@@ -37,6 +39,7 @@ from classifier_eval import (
 )
 import classifier_training as training
 from classifier_scoring import Accuracy
+from util import get_vit_config, get_vit_encoder
 
 
 def warmup_linear(x, warmup=0.002):
@@ -58,10 +61,11 @@ def prepare_dry_run(args):
 
 
 def prune_head_plus_ddp(model, to_prune, is_ddp):
-    model.vit.prune_heads(to_prune)
     if is_ddp:
-        model = DDP(model.vit)
-        model.vit = model.module 
+        model.module.vit.prune_heads(to_prune)
+        model = DDP(model.module)
+    else:
+        model.vit.prune_heads(to_prune)
     return model
 
 def main():
@@ -73,6 +77,7 @@ def main():
     classifier_args.eval_args(parser)
     classifier_args.analysis_args(parser)
     classifier_args.export_onnx_args(parser)
+    classifier_args.finetune_args(parser)
 
     args = parser.parse_args()
 
@@ -104,9 +109,9 @@ def main():
             "empty."
         )
 
-    if args.n_retrain_steps_after_pruning > 0 and args.retrain_pruned_heads:
+    if (args.n_retrain_steps_after_pruning  or args.n_retrain_epochs_after_pruning) and args.retrain_pruned_heads:
         raise ValueError(
-            "--n_retrain_steps_after_pruning and --retrain_pruned_heads are "
+            "(--n_retrain_steps_after_pruning or --n_retrain_epochs_after_pruning) and --retrain_pruned_heads are "
             "mutually exclusive"
         )
     if torch.cuda.device_count() > 1 and args.export_onnx:
@@ -172,47 +177,29 @@ def main():
 
 
     # ==== PREPARE MODEL ====
-    def get_model():
+    def get_deit_model():
         from transformers import ViTForImageClassification
         model = ViTForImageClassification.from_pretrained(f'facebook/deit-{args.deit_type}-patch16-224')
+
+        if args.fp16:
+            model.half()
+        model.to(device)
+        if args.local_rank != -1:
+            # try:
+            #     from apex.parallel import DistributedDataParallel as DDP
+            # except ImportError:
+            #     raise ImportError(
+            #         "Please install apex from https://www.github.com/nvidia/apex "
+            #         "to use distributed and fp16 training."
+            #     )
+            model = DDP(model)
+        elif n_gpu > 1:
+            model = torch.nn.DataParallel(model)
+        
         return model
 
-    model = get_model()
+    model = get_deit_model()
 
-    # Head dropout
-    for layer in model.vit.encoder.layer:
-        layer.attention.attention.dropout.p = args.attn_dropout
-
-    if args.fp16:
-        model.half()
-    model.to(device)
-    if args.local_rank != -1:
-        # try:
-        #     from apex.parallel import DistributedDataParallel as DDP
-        # except ImportError:
-        #     raise ImportError(
-        #         "Please install apex from https://www.github.com/nvidia/apex "
-        #         "to use distributed and fp16 training."
-        #     )
-        model = DDP(model)
-        model.vit = model.module
-
-    elif n_gpu > 1:
-        model = torch.nn.DataParallel(model)
-        model.vit = model.module
-
-    '''
-    # Parse pruning descriptor
-    to_prune = pruning.parse_head_pruning_descriptors(
-        args.attention_mask_heads,
-        reverse_descriptors=args.reverse_head_mask,
-    )
-    # Mask heads
-    if args.actually_prune:
-        model.vit.prune_heads(to_prune)
-    else:
-        model.vit.mask_heads(to_prune)
-    '''
 
     # ==== PREPARE TRAINING ====
 
@@ -290,20 +277,10 @@ def main():
 
     is_main = args.local_rank == -1 or torch.distributed.get_rank() == 0
 
-    '''
-    # Parse pruning descriptor
-    to_prune = pruning.parse_head_pruning_descriptors(
-        args.attention_mask_heads,
-        reverse_descriptors=args.reverse_head_mask,
-    )
-    # Mask heads
-    if args.actually_prune:
-        model.vit.prune_heads(to_prune)
-    else:
-        model.vit.mask_heads(to_prune)
-    '''
     
     # ==== PRUNE ====
+    retrain_model_save_path_tem = os.path.join(args.output_dir, f'deit_{args.deit_type}_are16heads_prune{{num_pruned_heads}}_retrained.state_dict')
+    finetune_model_save_path_tem = os.path.join(args.output_dir, f'deit_{args.deit_type}_are16heads_prune{{num_pruned_heads}}{{retrain_flag}}_finetune.state_dict')
     if args.do_prune:
         if args.fp16:
             raise NotImplementedError("FP16 is not yet supported for pruning")
@@ -312,12 +289,12 @@ def main():
         prune_sequence = pruning.determine_pruning_sequence(
             args.prune_number,
             args.prune_percent,
-            model.vit.config.num_hidden_layers,
-            model.vit.config.num_attention_heads,
+            get_vit_config(model).num_hidden_layers,
+            get_vit_config(model).num_attention_heads,
             args.at_least_x_heads_per_layer,
         )
         # Prepare optimizer for tuning after pruning
-        if args.n_retrain_steps_after_pruning > 0:
+        if args.n_retrain_steps_after_pruning or args.n_retrain_epochs_after_pruning:
             retrain_optimizer = SGD(
                 model.parameters(),
                 lr=args.retrain_learning_rate
@@ -331,21 +308,24 @@ def main():
                     / args.train_batch_size
                     / args.gradient_accumulation_steps
                 ) * args.num_train_epochs
+        # Prepare optimizer for finetuning
+        if args.n_finetune_epochs_after_pruning:
+            finetune_optimizer = SGD(
+                model.parameters(),
+                lr=args.finetune_learning_rate
+            )
 
         to_prune = {}
         for step, n_to_prune in enumerate(prune_sequence):
-
             if step == 0 or args.exact_pruning:
                 # Calculate importance scores for each layer
-                if args.head_importance_file:
+                if step == 0 and args.head_importance_file:
                     # load txt file
                     assert(args.head_importance_file.endswith('.txt'))
                     if is_main:
                         logger.info(f'Load head_importance_score from {args.head_importance_file}')
                     head_importance = torch.from_numpy(np.loadtxt(args.head_importance_file, dtype=np.float32))
                 else:
-                    if args.local_rank != -1:
-                        raise NotImplementedError('Distributed calculate head importance has not been implemented.')
                     head_importance = calculate_head_importance(
                         model,
                         train_dataset,
@@ -355,12 +335,16 @@ def main():
                         subset_size=args.compute_head_importance_on_subset,
                         verbose=True,
                         disable_progress_bar=args.no_progress_bars,
+                        distributed=args.local_rank != -1,
+                        num_workers=args.num_workers,
+                        pruned_heads=to_prune
                     )
                 if is_main:
                     logger.info("Head importance scores")
                     for layer in range(len(head_importance)):
                         layer_scores = head_importance[layer].cpu().data
                         logger.info("\t".join(f"{x:.5f}" for x in layer_scores))
+            
             # Determine which heads to prune
             to_prune = pruning.what_to_prune(
                 head_importance,
@@ -368,13 +352,20 @@ def main():
                 to_prune={} if args.retrain_pruned_heads else to_prune,
                 at_least_x_heads_per_layer=args.at_least_x_heads_per_layer
             )
+            num_pruned_heads =  sum(len(heads) for heads in to_prune.values())
             # Actually mask the heads
             if args.actually_prune:
                 model = prune_head_plus_ddp(model, to_prune, is_ddp=args.local_rank != -1)
             else:
                 model.vit.mask_heads(to_prune)
+            # print model
+            if is_main:
+                logger.info(f'Prune {num_pruned_heads} heads. Pruned Model: ')
+                logger.info(model)
+
             # Maybe continue training a bit
-            if args.n_retrain_steps_after_pruning > 0:
+            retrain_model_save_path = retrain_model_save_path_tem.format(num_pruned_heads=num_pruned_heads)
+            if args.n_retrain_steps_after_pruning or args.n_retrain_epochs_after_pruning:
                 set_seeds(args.seed + step + 1, n_gpu)
                 training.train(
                     train_dataset,
@@ -382,12 +373,22 @@ def main():
                     retrain_optimizer,
                     args.train_batch_size,
                     n_steps=args.n_retrain_steps_after_pruning,
+                    n_epochs=args.n_retrain_epochs_after_pruning,
                     device=device,
                     verbose=True,
-                    local_rank=args.local_rank
+                    local_rank=args.local_rank,
+                    num_workers=args.num_workers,
                 )
+                # save model
+                if is_main:
+                    state_dict = {
+                        'model': getattr(model, 'module', model).state_dict(),
+                        'num_pruned_heads':num_pruned_heads,
+                    }
+                    torch.save(state_dict, retrain_model_save_path)
+            
             elif args.retrain_pruned_heads:
-                exit('Not implemented')
+                raise NotImplementedError('Retrain pruned heads not implemented.')
                 set_seeds(args.seed + step + 1, n_gpu)
                 # Reload BERT
                 base_bert = None
@@ -475,13 +476,81 @@ def main():
                     verbose=False,
                     disable_progress_bar=args.no_progress_bars,
                     scorer=scorer,
-                    distributed=args.local_rank != -1
+                    distributed=args.local_rank != -1,
+                    num_workers=args.num_workers
                 )[scorer.name]
 
                 if is_main:
                     logger.info("***** Pruning eval results *****")
                     tot_pruned = sum(len(heads) for heads in to_prune.values())
                     logger.info(f"{tot_pruned}\t{accuracy}")
+
+                    if (args.n_retrain_steps_after_pruning or args.n_retrain_epochs_after_pruning) and is_main:
+                        state_dict = torch.load(retrain_model_save_path)
+                        state_dict['accuracy'] = accuracy
+                        torch.save(state_dict, retrain_model_save_path)
+
+
+            # finetune
+            finetune_model_save_path = finetune_model_save_path_tem.format(
+                num_pruned_heads=num_pruned_heads, 
+                retrain_flag='_retrain' if args.n_retrain_steps_after_pruning or args.n_retrain_epochs_after_pruning else ''
+            )
+            if args.n_finetune_epochs_after_pruning:
+                if is_main:
+                    logger.info("***** Running Fine-tuning *****")
+                state_dict_before_finetune = {
+                    'model': model.state_dict()
+                }
+                set_seeds(args.seed + step + 1, n_gpu)
+                training.train(
+                    train_dataset,
+                    model,
+                    finetune_optimizer,
+                    args.train_batch_size,
+                    n_steps=None,
+                    n_epochs=args.n_finetune_epochs_after_pruning,
+                    device=device,
+                    verbose=True,
+                    local_rank=args.local_rank,
+                    num_workers=args.num_workers
+                )
+
+                state_dict_after_finetune = {
+                    'model': model.state_dict()
+                }
+
+                if args.eval_finetuned:
+                    # Print the pruning descriptor
+                    if is_main:
+                        logger.info("Evaluating following pruning strategy after finetuning")
+                        logger.info(pruning.to_pruning_descriptor(to_prune))
+                    # Eval accuracy
+                    scorer = Accuracy()
+                    accuracy = evaluate(
+                        eval_dataset,
+                        model,
+                        args.eval_batch_size,
+                        save_attention_probs=args.save_attention_probs,
+                        print_head_entropy=False,
+                        device=device,
+                        verbose=False,
+                        disable_progress_bar=args.no_progress_bars,
+                        scorer=scorer,
+                        distributed=args.local_rank != -1,
+                        num_workers=args.num_workers
+                    )[scorer.name]
+
+                    if is_main:
+                        logger.info("***** Finetuning eval results *****")
+                        tot_pruned = sum(len(heads) for heads in to_prune.values())
+                        logger.info(f"Finetuned {tot_pruned}\t{accuracy}")
+
+                        state_dict_after_finetune['accuracy'] = accuracy
+                        torch.save(state_dict_after_finetune, finetune_model_save_path)
+                        logger.info(f'Save finetuned model to {finetune_model_save_path}')
+
+                model.load_state_dict(state_dict_before_finetune['model'])
 
 
     # ==== EVALUATE ====
@@ -496,7 +565,8 @@ def main():
             result=result,
             disable_progress_bar=args.no_progress_bars,
             scorer=Accuracy(),
-            distributed=args.local_rank != -1
+            distributed=args.local_rank != -1,
+            num_workers=args.num_workers
         )
         if is_main:
             output_eval_file = os.path.join(args.output_dir, "eval_results.txt")

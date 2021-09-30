@@ -182,3 +182,47 @@ def train_epoch(
             optimizer.zero_grad()
             global_step += 1
     return global_step, tr_loss, nb_tr_steps
+
+
+
+def get_training_args(
+    learning_rate,
+    micro_batch_size,
+    n_steps,
+    n_epochs,
+    local_rank,
+    num_workers,
+    output_dir,
+):
+    from transformers import TrainingArguments
+    training_args = TrainingArguments(
+        output_dir=output_dir,
+        max_steps=n_steps or -1,
+        num_train_epochs=n_epochs,
+        per_device_train_batch_size=micro_batch_size,
+        per_device_eval_batch_size=500,
+        weight_decay=0.01,
+        learning_rate=learning_rate,
+        max_grad_norm=1,
+        logging_dir='./training_log',
+        logging_steps=10,
+        local_rank=local_rank,
+        save_strategy='no',
+        dataloader_num_workers=num_workers,
+        ddp_find_unused_parameters=False
+    )
+    return training_args
+
+
+def huggingface_trainer_train(
+    args,
+    train_dataset,
+    model,
+):
+    from transformers import Trainer, TrainingArguments
+    trainer = Trainer(
+        args=args,
+        model=model,
+        train_dataset=train_dataset
+    )
+    trainer.train()

@@ -1,5 +1,10 @@
 import torch
-
+from torchvision import datasets
+from torchvision.datasets.folder import ImageFolder
+import torch.distributed as dist
+from typing import Dict 
+import numpy as np
+import torch
 
 def head_entropy(p):
     plogp = p * torch.log(p)
@@ -64,3 +69,64 @@ def get_vit_config(model):
         return model.module.vit.config
     else:
         raise RuntimeError('Model neither has attribute "vit" or "module".')
+
+
+
+'''============================================================
+        load data
+================================================================='''
+class DictImageFolder(datasets.ImageFolder):
+    def __init__(self, shuffle, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.shuffle = shuffle
+        self.idx_list = np.arange(super().__len__())
+        if self.shuffle:
+            np.random.shuffle(self.idx_list)
+      
+    def __getitem__(self, index: int) -> Dict:
+        index = self.idx_list[index]
+        item = super().__getitem__(index)
+        return dict(
+          pixel_values=item[0],
+          label=item[1]
+        )
+    
+def build_dataset(data_path, input_size=224, is_train=False, shuffle=False, return_dict=True):
+    def build_transform(input_size):
+        from torchvision import transforms
+        from timm.data.constants import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
+        t = []
+        if input_size > 32:
+            size = int((256 / 224) * input_size)
+            t.append(
+                transforms.Resize(size, interpolation=3),  # to maintain same ratio w.r.t. 224 images
+            )
+            t.append(transforms.CenterCrop(input_size))
+
+        t.append(transforms.ToTensor())
+        t.append(transforms.Normalize(IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD))
+        return transforms.Compose(t)
+
+    import os
+    from torchvision import datasets
+    transform = build_transform(input_size)
+    root = os.path.join(data_path, 'val' if not is_train else 'train')
+    if return_dict:
+      dataset = DictImageFolder(shuffle, root, transform=transform)
+    else:
+      dataset = ImageFolder(root, transform=transform)
+    num_classes = 1000
+    return dataset, num_classes
+
+
+def to_data_loader(dataset, batch_size, num_workers):
+    import torch
+    sampler = torch.utils.data.SequentialSampler(dataset)
+    data_loader = torch.utils.data.DataLoader(
+        dataset, sampler=sampler,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        pin_memory=True,
+        drop_last=False
+    )
+    return data_loader

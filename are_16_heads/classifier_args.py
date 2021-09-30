@@ -134,6 +134,11 @@ def get_base_parser():
 def training_args(parser):
     train_group = parser.add_argument_group("Training")
     train_group.add_argument(
+        '--use_huggingface_trainer',
+        action='store_true',
+        help='Use huggingface trainer to train model'
+    )
+    train_group.add_argument(
         '--num_workers',
         default=8,
         type=int,
@@ -370,6 +375,12 @@ def finetune_args(parser: argparse.ArgumentParser):
         default=None,
         type=int,
         help='Finetune the pruned (or retrained) model for a fixed number of epochs'
+    )
+    finetune_group.add_argument(
+        '--n_finetune_steps_after_pruning',
+        default=None,
+        type=int,
+        help='Finetune the pruned (or retrained) model for a fixed number of steps'
     )
     finetune_group.add_argument(
         '--eval_finetuned',

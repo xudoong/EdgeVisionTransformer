@@ -3,3 +3,4 @@ vit_huggingface.py
 play.py
 **/foo.sh
 **/__pycache__
+are_16_heads/training_log/

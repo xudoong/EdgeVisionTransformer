@@ -171,7 +171,10 @@ def calculate_head_importance(
     tot_tokens = 0
 
     for step, batch in enumerate(prune_iterator):
-        batch = tuple(t.to(device) for t in batch)
+        if isinstance(batch, dict):
+            batch = tuple(batch[k].to(device) for k in batch.keys())
+        else:
+            batch = tuple(t.to(device) for t in batch)
         image, label = batch
         # Compute gradients
         loss = model(image).logits.sum()

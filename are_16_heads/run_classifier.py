@@ -60,7 +60,7 @@ def prepare_dry_run(args):
     return args
 
 
-def prune_head_plus_ddp(model, to_prune, is_ddp):
+def prune_heads_plus_ddp(model, to_prune, is_ddp):
     if is_ddp:
         model.module.vit.prune_heads(to_prune)
         model = DDP(model.module)
@@ -317,6 +317,10 @@ def main():
 
         to_prune = {}
         for step, n_to_prune in enumerate(prune_sequence):
+            if is_main:
+                logger.info('==================================================================================')
+                logger.info('==================================================================================')
+            
             if step == 0 or args.exact_pruning:
                 # Calculate importance scores for each layer
                 if step == 0 and args.head_importance_file:
@@ -355,14 +359,16 @@ def main():
             num_pruned_heads =  sum(len(heads) for heads in to_prune.values())
             # Actually mask the heads
             if args.actually_prune:
-                model = prune_head_plus_ddp(model, to_prune, is_ddp=args.local_rank != -1)
+                model = prune_heads_plus_ddp(model, to_prune, is_ddp=args.local_rank != -1)
             else:
                 model.vit.mask_heads(to_prune)
             # print model
-            if is_main:
-                logger.info(f'Prune {num_pruned_heads} heads. Pruned Model: ')
-                logger.info(model)
+                # if is_main:
+                #     logger.info(f'Prune {num_pruned_heads} heads. Pruned Model: ')
+                #     logger.info(model)
 
+            if is_main:
+                logger.info('- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ')
             # Maybe continue training a bit
             retrain_model_save_path = retrain_model_save_path_tem.format(num_pruned_heads=num_pruned_heads)
             if args.n_retrain_steps_after_pruning or args.n_retrain_epochs_after_pruning:
@@ -458,6 +464,8 @@ def main():
                             input_shape=[1,3,224,224],
                             dynamic_batch=True)
 
+            if is_main:
+                logger.info('- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ')
             # Evaluate
             if args.eval_pruned:
                 # Print the pruning descriptor
@@ -491,6 +499,8 @@ def main():
                         torch.save(state_dict, retrain_model_save_path)
 
 
+            if is_main:
+                logger.info('- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ')
             # finetune
             finetune_model_save_path = finetune_model_save_path_tem.format(
                 num_pruned_heads=num_pruned_heads, 
@@ -519,6 +529,9 @@ def main():
                 state_dict_after_finetune = {
                     'model': model.state_dict()
                 }
+
+                if is_main:
+                    logger.info('- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ')
 
                 if args.eval_finetuned:
                     # Print the pruning descriptor

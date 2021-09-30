@@ -129,14 +129,18 @@ def calculate_head_importance(
     if subset_size <= 1:
         subset_size *= len(data)
     n_prune_steps = int(np.ceil(int(subset_size) / batch_size))
+    if distributed:
+        n_prune_steps = int(np.ceil(n_prune_steps / dist.get_world_size()))
+
     if verbose and (not distributed or dist.get_rank() == 0):
         logger.info("***** Calculating head importance *****")
         logger.info(f"  Num examples = {len(data)}")
         logger.info(f"  Batch size = {batch_size}")
-        logger.info(f"  Num steps = {n_prune_steps}")
         if distributed:
+            logger.info(f"  Num steps per gpu= {n_prune_steps}")
             logger.info(f'  Distributed mode, world size = {dist.get_world_size()}')
         else:
+            logger.info(f"  Num steps = {n_prune_steps}")
             logger.info(f'  Not in distributed mode.')
     
     # Prepare data loader
@@ -151,7 +155,7 @@ def calculate_head_importance(
         batch_size=batch_size,
         num_workers=num_workers
     )
-    if subset_size < 1:
+    if subset_size < len(data):
         dataloader = islice(dataloader, n_prune_steps)
     prune_iterator = tqdm(
         dataloader,

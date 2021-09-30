@@ -35,6 +35,8 @@ def train(
     eval_mode=False,
     num_workers=0,
 ):
+    # arg n_steps: num steps per gpu
+    # arg n_steps_per_epoch: num steps per epoch per gpu
     if not (n_steps or n_epochs):
         Warning('Train: both n_steps and n_epochs are None, set n_epochs=1.')
         n_epochs=1
@@ -56,29 +58,30 @@ def train(
         num_workers=num_workers
     )
     # Number of training steps
-    n_steps_per_epochs = int(
-        len(train_data)
-        / train_batch_size
+    n_steps_per_epoch = int(np.ceil(
+        len(train_dataloader)
         / gradient_accumulation_steps
-    )
+    ))
     # Decide the number of steps based on the requested number of epochs
     # (or vice versa)
     if n_steps is None:
-        n_steps = n_steps_per_epochs * n_epochs
+        n_steps = n_steps_per_epoch * n_epochs
     else:
-        n_epochs = int(np.ceil(n_steps / n_steps_per_epochs))
+        n_epochs = int(np.ceil(n_steps / n_steps_per_epoch))
     # Print stuff
     if verbose and is_main:
         logger.info("***** Running training *****")
         logger.info(f"  Num examples = {len(train_data)}")
         logger.info(f"  Batch size = {train_batch_size}")
+        logger.info(f"  Num epochs = {n_epochs}")
         logger.info(f"  Num steps = {n_steps}")
+        logger.info(f"  Num steps per epoch = {n_steps_per_epoch}")
     n_remaining_steps = n_steps
     tr_loss = nb_tr_steps = 0
     # Iterate over epochs
     for _ in trange(int(n_epochs), desc="Epoch", disable=disable_progress_bar):
         # Check whether we are doing the full epoch or not
-        full_epoch = n_remaining_steps >= n_steps_per_epochs
+        full_epoch = n_remaining_steps >= n_steps_per_epoch
         # Run the epoch
         global_step, epoch_tr_loss, epoch_nb_tr_steps = train_epoch(
             train_dataloader,
@@ -100,13 +103,12 @@ def train(
         tr_loss += epoch_tr_loss
         nb_tr_steps += epoch_nb_tr_steps
         # Total number of remaining steps
-        n_remaining_steps -= n_steps_per_epochs
+        n_remaining_steps -= n_steps_per_epoch
         if verbose and is_main:
             logger.info(f"Epoch loss = {epoch_tr_loss / epoch_nb_tr_steps}")
     # Print some info
     if verbose and is_main:
         logger.info("***** Finished training *****")
-        logger.info(f"  Global step = {len(train_data)}")
         logger.info(f"  Training loss = {tr_loss/nb_tr_steps:.3f}")
     # Return global step and stuff
     return global_step, tr_loss, nb_tr_steps

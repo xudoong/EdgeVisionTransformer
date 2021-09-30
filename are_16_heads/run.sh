@@ -2,6 +2,8 @@
 
 TASK=$1
 OPTIONS="${@:2}"
+NUM_GPUS=4
+
 # expected options: 
 # 1. Eval only: --deit_type base|small|tiny  --prune_number `seq 0 132|60|24` --head_importance_file xxx
 # 2. Retrain: --deit_type base|small|tiny  --prune_number `seq 0 132|60|24` --head_importance_file xxx \
@@ -22,7 +24,7 @@ function run_eval () {
 }
 
 function distributed_launch() {
-    python -m torch.distributed.launch --nproc_per_node 4 /data/data1/v-xudongwang/benchmark_tools/are_16_heads/run_classifier.py \
+    python -m torch.distributed.launch --nproc_per_node $NUM_GPUS /data/data1/v-xudongwang/benchmark_tools/are_16_heads/run_classifier.py \
     --task_name "ImageNet1K" \
     --normalize_pruning_by_layer \
     --do_prune \
@@ -69,11 +71,12 @@ function iterative_pruning() {
     --exact_pruning \
     --train_batch_size 256 \
     --n_retrain_epochs_after_pruning 3 \
-    --retrain_learning_rate 0.00005 \
+    --retrain_learning_rate 0.0000025 \
     --n_finetune_epochs_after_pruning 3 \
-    --finetune_learning_rate 0.00005 \
+    --finetune_learning_rate 0.0000025 \
     --eval_finetuned \
     --output_dir /data/data1/v-xudongwang/models/torch_model/are_16_heads/iterative
+
 
     /data/data1/v-xudongwang/benchmark_tools/are_16_heads/run.sh distributed_launch \
     --deit_type small \
@@ -81,9 +84,9 @@ function iterative_pruning() {
     --exact_pruning \
     --train_batch_size 128 \
     --n_retrain_epochs_after_pruning 3 \
-    --retrain_learning_rate 0.00005 \
+    --retrain_learning_rate 0.00000125 \
     --n_finetune_epochs_after_pruning 3 \
-    --finetune_learning_rate 0.00005 \
+    --finetune_learning_rate 0.00000125 \
     --eval_finetuned \
     --output_dir /data/data1/v-xudongwang/models/torch_model/are_16_heads/iterative
 
@@ -93,9 +96,9 @@ function iterative_pruning() {
     --exact_pruning \
     --train_batch_size 64 \
     --n_retrain_epochs_after_pruning 3 \
-    --retrain_learning_rate 0.00005 \
+    --retrain_learning_rate 0.000000625 \
     --n_finetune_epochs_after_pruning 3 \
-    --finetune_learning_rate 0.00005 \
+    --finetune_learning_rate 0.000000625 \
     --eval_finetuned \
     --output_dir /data/data1/v-xudongwang/models/torch_model/are_16_heads/iterative
 }
@@ -108,7 +111,7 @@ function no_iterative_pruning() {
     --head_importance_file /data/data1/v-xudongwang/benchmark_tools/are_16_heads/deit_tiny_head_importance.txt \
     --train_batch_size 256 \
     --n_finetune_epochs_after_pruning 3 \
-    --finetune_learning_rate 0.00005 \
+    --finetune_learning_rate 0.0000025 \
     --eval_finetuned \
     --output_dir /data/data1/v-xudongwang/models/torch_model/are_16_heads/no_iterative
 
@@ -118,7 +121,7 @@ function no_iterative_pruning() {
     --head_importance_file /data/data1/v-xudongwang/benchmark_tools/are_16_heads/deit_small_head_importance.txt \
     --train_batch_size 128 \
     --n_finetune_epochs_after_pruning 3 \
-    --finetune_learning_rate 0.00005 \
+    --finetune_learning_rate 0.00000125 \
     --eval_finetuned \
     --output_dir /data/data1/v-xudongwang/models/torch_model/are_16_heads/no_iterative
 
@@ -128,7 +131,7 @@ function no_iterative_pruning() {
     --head_importance_file /data/data1/v-xudongwang/benchmark_tools/are_16_heads/deit_base_head_importance.txt \
     --train_batch_size 64 \
     --n_finetune_epochs_after_pruning 3 \
-    --finetune_learning_rate 0.00005 \
+    --finetune_learning_rate 0.000000625 \
     --eval_finetuned \
     --output_dir /data/data1/v-xudongwang/models/torch_model/are_16_heads/no_iterative
 }
@@ -141,5 +144,21 @@ function valid_head_importance_calc() {
     --exact_pruning \
     --train_batch_size 256 \
     --output_dir /data/data1/v-xudongwang/models/torch_model/
+}
+
+function debug() {
+    /data/data1/v-xudongwang/benchmark_tools/are_16_heads/run.sh distributed_launch \
+    --deit_type tiny \
+    --prune_number `seq 3 3 24` \
+    --output_dir /data/data1/v-xudongwang/models/torch_model/are_16_heads/debug_iterative \
+    --compute_head_importance_on_subset 0.001 \
+    --head_importance_file /data/data1/v-xudongwang/benchmark_tools/are_16_heads/deit_tiny_head_importance.txt \
+    --train_batch_size 256 \
+    --n_retrain_epochs_after_pruning 1 \
+    --retrain_learning_rate 0.0000025  \
+
+    # --n_finetune_epochs_after_pruning 3 \
+    # --finetune_learning_rate 0.00005 \
+    # --eval_finetuned \
 }
 $TASK ""

@@ -182,7 +182,7 @@ function debug() {
     --n_finetune_steps_after_pruning  30\
     --finetune_learning_rate 0.0001 \
     --eval_finetuned \
-    --output_dir /data/data1/v-xudongwang/models/torch_model/are_16_heads/debug_iterative \
+    --output_dir /data/data1/v-xudongwang/models/torch_model/are_16_heads/debug_no_iterative \
     # --n_finetune_epochs_after_pruning 3 \
     # --finetune_learning_rate 0.00005 \
     # --eval_finetuned \

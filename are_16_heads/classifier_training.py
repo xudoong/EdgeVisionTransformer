@@ -198,7 +198,7 @@ def get_training_args(
     training_args = TrainingArguments(
         output_dir=output_dir,
         max_steps=n_steps or -1,
-        num_train_epochs=n_epochs,
+        num_train_epochs=n_epochs or -1,
         per_device_train_batch_size=micro_batch_size,
         per_device_eval_batch_size=500,
         weight_decay=0.01,

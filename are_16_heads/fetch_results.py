@@ -22,6 +22,10 @@ def fetch_accuracy(parser: argparse.ArgumentParser):
             tokens = lines[i + 1].split()
             acc = round(float(tokens[2]) * 100, 2)
             acc_list.append(acc)
+        # if 'Finetuning eval results' in line:
+        #     tokens = lines[i + 1].split()
+        #     acc = round(float(tokens[3]) * 100, 2)
+        #     acc_list.append(acc)
         i += 1
 
     print (acc_list)

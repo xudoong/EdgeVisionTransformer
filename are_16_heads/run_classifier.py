@@ -190,8 +190,8 @@ def main():
         # )
         import copy
         finetune_args = copy.deepcopy(training_args)
-        finetune_args.n_steps = args.n_finetune_steps_after_pruning or -1
-        finetune_args.n_epochs = args.n_finetune_epochs_after_pruning or -1
+        finetune_args.max_steps = args.n_finetune_steps_after_pruning or -1
+        finetune_args.num_train_epochs = args.n_finetune_epochs_after_pruning or -1
 
     is_main = args.local_rank == -1 or args.local_rank == 0
     
@@ -419,7 +419,7 @@ def main():
                         torch.save(state_dict_after_finetune, finetune_model_save_path)
                         logger.info(f'Save finetuned model to {finetune_model_save_path}')
 
-                model.load_state_dict(state_dict_before_finetune['model'])
+                getattr(model, 'module', model).load_state_dict(state_dict_before_finetune['model'])
                 if is_main:
                     logger.info('Loaded back the model before finetuning.')
 

@@ -2,11 +2,14 @@ def fetech_tf_bench_results(result_str):
         if rfind_assign_int(result_str, 'count') >= 2:
             std_ms = rfind_assign_float(result_str, 'std') / 1e3
             avg_ms = rfind_assign_float(result_str, 'avg') / 1e3
+            mem_mb = rfind_assign_float(result_str, 'overall')
         else:
             std_ms = 0
             avg_ms = rfind_assign_float(result_str, 'curr') / 1e3
+            mem_mb = rfind_assign_float(result_str, 'overall')
 
-        return std_ms,avg_ms
+        return std_ms, avg_ms, mem_mb
+        
 def rfind_assign(s, mark):
     mark += "="
     p = s.rfind(mark)

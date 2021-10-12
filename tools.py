@@ -466,8 +466,8 @@ def mobile_benchmark():
     skip_push = args.skip_push
  
     adb = ADBConnect("98281FFAZ009SV")
-    std_ms, avg_ms = run_on_android(model_path, adb, use_gpu,num_threads=num_threads, num_runs=num_runs, warm_ups=warm_ups, skip_push=skip_push)
-    print(std_ms / avg_ms * 100, f'Avg latency {avg_ms} ms,', f'Std {std_ms} ms.')
+    std_ms, avg_ms, mem_mb = run_on_android(model_path, adb, use_gpu,num_threads=num_threads, num_runs=num_runs, warm_ups=warm_ups, skip_push=skip_push)
+    print(std_ms / avg_ms * 100, f'Avg latency {avg_ms} ms,', f'Std {std_ms} ms. Mem footprint(MB): {mem_mb}')
 
 
 def get_onnx_opset_version_cmd():

@@ -52,6 +52,20 @@ function distributed_launch_another_port() {
     $OPTIONS
 }
 
+function distributed_launch_another_port_no_eval() {
+    python -m torch.distributed.launch --nproc_per_node 2 --master_port 12345 /data/data1/v-xudongwang/benchmark_tools/are_16_heads/run_classifier.py \
+    --task_name "ImageNet1K" \
+    --normalize_pruning_by_layer \
+    --do_prune \
+    --actually_prune \
+    --data_dir /data/data1/v-xudongwang/imagenet \
+    --eval_batch_size 500 \
+    --at_least_x_heads_per_layer 1 \
+    --num_workers 8 \
+    --use_huggingface_trainer \
+    $OPTIONS
+}
+
 function distributed_launch_no_eval() {
     python -m torch.distributed.launch --nproc_per_node 4 /data/data1/v-xudongwang/benchmark_tools/are_16_heads/run_classifier.py \
     --task_name "ImageNet1K" \
@@ -62,6 +76,7 @@ function distributed_launch_no_eval() {
     --eval_batch_size 500 \
     --at_least_x_heads_per_layer 1 \
     --num_workers 8 \
+    --use_huggingface_trainer \
     $OPTIONS
 }
 
@@ -87,9 +102,6 @@ function iterative_pruning() {
     --train_batch_size 256 \
     --n_retrain_epochs_after_pruning 3 \
     --retrain_learning_rate 0.0001 \
-    --n_finetune_epochs_after_pruning 3 \
-    --finetune_learning_rate 0.0001 \
-    --eval_finetuned \
     --output_dir /data/data1/v-xudongwang/models/torch_model/are_16_heads/iterative/tiny \
 
 
@@ -100,22 +112,30 @@ function iterative_pruning() {
     --train_batch_size 128 \
     --n_retrain_epochs_after_pruning 3 \
     --retrain_learning_rate 0.00005 \
-    --n_finetune_epochs_after_pruning 3 \
-    --finetune_learning_rate 0.00005 \
-    --eval_finetuned \
     --output_dir /data/data1/v-xudongwang/models/torch_model/are_16_heads/iterative/small
 
-    /data/data1/v-xudongwang/benchmark_tools/are_16_heads/run.sh distributed_launch \
-    --deit_type base \
-    --prune_number `seq 0 4 132` \
-    --exact_pruning \
-    --train_batch_size 64 \
-    --n_retrain_epochs_after_pruning 3 \
-    --retrain_learning_rate 0.000025 \
-    --n_finetune_epochs_after_pruning 3 \
-    --finetune_learning_rate 0.000025 \
-    --eval_finetuned \
-    --output_dir /data/data1/v-xudongwang/models/torch_model/are_16_heads/iterative/base
+    # /data/data1/v-xudongwang/benchmark_tools/are_16_heads/run.sh distributed_launch \
+    # --deit_type base \
+    # --prune_number `seq 0 4 132` \
+    # --exact_pruning \
+    # --train_batch_size 64 \
+    # --n_retrain_epochs_after_pruning 3 \
+    # --retrain_learning_rate 0.000025 \
+    # --n_finetune_epochs_after_pruning 3 \
+    # --finetune_learning_rate 0.000025 \
+    # --eval_finetuned \
+    # --output_dir /data/data1/v-xudongwang/models/torch_model/are_16_heads/iterative/base
+}
+
+function iterative_pruning_base() {
+        /data/data1/v-xudongwang/benchmark_tools/are_16_heads/run.sh distributed_launch \
+        --deit_type base \
+        --prune_number `seq 0 4 132` \
+        --exact_pruning \
+        --train_batch_size 64 \
+        --n_retrain_epochs_after_pruning 3 \
+        --retrain_learning_rate 0.000025 \
+        --output_dir /data/data1/v-xudongwang/models/torch_model/are_16_heads/iterative/base
 }
 
 
@@ -161,6 +181,16 @@ function valid_head_importance_calc() {
     --output_dir /data/data1/v-xudongwang/models/torch_model/
 }
 
+function distributed_launch_finetune_another_port() {
+    python -m torch.distributed.launch --nproc_per_node 2 --master_port 12345 /data/data1/v-xudongwang/benchmark_tools/are_16_heads/finetune.py \
+    --data_dir /data/data1/v-xudongwang/imagenet \
+    --eval_batch_size 500 \
+    --num_workers 8 \
+    --use_huggingface_trainer \
+    --eval_finetuned \
+    $OPTIONS
+}
+
 function debug() {
     # /data/data1/v-xudongwang/benchmark_tools/are_16_heads/run.sh distributed_launch \
     # --deit_type tiny \
@@ -171,20 +201,25 @@ function debug() {
     # --train_batch_size 256 \
     # --n_retrain_epochs_after_pruning 1 \
     # --retrain_learning_rate 0.0000025  \
-    /data/data1/v-xudongwang/benchmark_tools/are_16_heads/run.sh distributed_launch_another_port \
+    /data/data1/v-xudongwang/benchmark_tools/are_16_heads/run.sh distributed_launch_finetune_another_port \
     --deit_type tiny \
-    --prune_number `seq 3 3 24` \
-    --exact_pruning \
-    --compute_head_importance_on_subset 0.001 \
+    --finetune_model_path /data/data1/v-xudongwang/models/torch_model/are_16_heads/debug_iterative/deit_tiny_are16heads_prune18/final \
     --train_batch_size 256 \
-    --n_retrain_steps_after_pruning 30 \
-    --retrain_learning_rate 0.0001 \
-    --n_finetune_steps_after_pruning  30\
+    --n_finetune_steps_after_pruning 30 \
     --finetune_learning_rate 0.0001 \
-    --eval_finetuned \
-    --output_dir /data/data1/v-xudongwang/models/torch_model/are_16_heads/debug_no_iterative \
-    # --n_finetune_epochs_after_pruning 3 \
-    # --finetune_learning_rate 0.00005 \
-    # --eval_finetuned \
+    --output_dir /data/data1/v-xudongwang/models/torch_model/are_16_heads/debug_iterative/deit_tiny_are16heads_prune18
+}
+
+function finetune_tiny() {
+    for x in `seq 0 80`; do \
+    /data/data1/v-xudongwang/benchmark_tools/are_16_heads/run.sh distributed_launch_finetune_another_port \
+    --deit_type tiny \
+    --finetune_model_path /data/data1/v-xudongwang/models/torch_model/are_16_heads/iterative/tiny/deit_tiny_are16heads_prune$x/final \
+    --train_batch_size 256 \
+    --n_finetune_epochs_after_pruning 3 \
+    --finetune_learning_rate 0.0001 \
+    --output_dir /data/data1/v-xudongwang/models/torch_model/are_16_heads/iterative/tiny/deit_tiny_are16heads_prune$x; done
+
+
 }
 $TASK ""

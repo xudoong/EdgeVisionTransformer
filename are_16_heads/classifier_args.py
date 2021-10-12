@@ -1,7 +1,5 @@
 import argparse
-from enum import IntEnum
-
-from torch._C import default_generator
+from pathlib import Path
 
 
 def get_base_parser():
@@ -34,7 +32,7 @@ def get_base_parser():
         "--task_name",
         default=None,
         type=str,
-        required=True,
+        required=False,
         help="The name of the task to train."
     )
     parser.add_argument(
@@ -371,6 +369,12 @@ def export_onnx_args(parser):
 def finetune_args(parser: argparse.ArgumentParser):
     finetune_group = parser.add_argument_group('Finetune')
     finetune_group.add_argument(
+        "--finetune_learning_rate",
+        default=5e-5,
+        type=float,
+        help="The initial learning rate for Adam."
+    )
+    finetune_group.add_argument(
         '--n_finetune_epochs_after_pruning',
         default=None,
         type=int,
@@ -388,8 +392,8 @@ def finetune_args(parser: argparse.ArgumentParser):
         help='Evaluate the finetuned model.'
     )
     finetune_group.add_argument(
-        '--finetune_learning_rate',
-        default=0.00005,
-        type=float,
-        help='Finetune learning rate'
+        '--finetune_model_path',
+        required=True,
+        type=Path,
+        help='Pretrained model dir to perform finetune.'
     )

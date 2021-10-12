@@ -55,7 +55,6 @@ def main():
     classifier_args.eval_args(parser)
     classifier_args.analysis_args(parser)
     classifier_args.export_onnx_args(parser)
-    classifier_args.finetune_args(parser)
 
     args = parser.parse_args()
 
@@ -178,26 +177,11 @@ def main():
             num_workers=args.num_workers,
             output_dir=args.output_dir,
         )
-        # initialize TrainingArguments twice would result in error: dist.init_process_group twice!
-        # finetune_args = training.get_training_args(
-        #     learning_rate=args.finetune_learning_rate,
-        #     micro_batch_size=args.train_batch_size,
-        #     n_steps=None,
-        #     n_epochs=args.n_retrain_epochs_after_pruning,
-        #     local_rank=args.local_rank,
-        #     num_workers=args.num_workers,
-        #     output_dir=args.output_dir,
-        # )
-        import copy
-        finetune_args = copy.deepcopy(training_args)
-        finetune_args.max_steps = args.n_finetune_steps_after_pruning or -1
-        finetune_args.num_train_epochs = args.n_finetune_epochs_after_pruning or -1
 
     is_main = args.local_rank == -1 or args.local_rank == 0
     
     # ==== PRUNE ====
-    retrain_model_save_path_tem = os.path.join(args.output_dir, f'deit_{args.deit_type}_are16heads_prune{{num_pruned_heads}}_retrained.state_dict')
-    finetune_model_save_path_tem = os.path.join(args.output_dir, f'deit_{args.deit_type}_are16heads_prune{{num_pruned_heads}}{{retrain_flag}}_finetuned.state_dict')
+    pruned_model_save_path_tem = os.path.join(args.output_dir, f'deit_{args.deit_type}_are16heads_prune{{num_pruned_heads}}/final')
     if args.do_prune:
         if args.fp16:
             raise NotImplementedError("FP16 is not yet supported for pruning")
@@ -215,12 +199,6 @@ def main():
             retrain_optimizer = SGD(
                 model.parameters(),
                 lr=args.retrain_learning_rate
-            )
-        # Prepare optimizer for finetuning
-        if args.n_finetune_epochs_after_pruning or args.n_finetune_steps_after_pruning:
-            finetune_optimizer = SGD(
-                model.parameters(),
-                lr=args.finetune_learning_rate
             )
 
         to_prune = {}
@@ -271,10 +249,13 @@ def main():
             else:
                 model.vit.mask_heads(to_prune)
 
+            # save pretrained model
             if is_main:
+                pruned_model_save_path = pruned_model_save_path_tem.format(num_pruned_heads=num_pruned_heads)
+                model.save_pretrained(pruned_model_save_path)
                 logger.info('- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ')
+
             # Maybe continue training a bit
-            retrain_model_save_path = retrain_model_save_path_tem.format(num_pruned_heads=num_pruned_heads)
             if args.n_retrain_steps_after_pruning or args.n_retrain_epochs_after_pruning:
                 set_seeds(args.seed + step + 1, n_gpu)
                 if args.use_huggingface_trainer:
@@ -296,14 +277,6 @@ def main():
                         local_rank=args.local_rank,
                         num_workers=args.num_workers,
                     )
-                # save model
-                if is_main:
-                    state_dict = {
-                        'model': getattr(model, 'module', model).state_dict(),
-                        'num_pruned_heads':num_pruned_heads,
-                    }
-                    torch.save(state_dict, retrain_model_save_path)
-                    logger.info(f'Save retrained model to {retrain_model_save_path}')
             
             if args.export_onnx:
                 from utils import export_onnx
@@ -341,87 +314,6 @@ def main():
                     logger.info("***** Pruning eval results *****")
                     tot_pruned = sum(len(heads) for heads in to_prune.values())
                     logger.info(f"{tot_pruned}\t{accuracy}")
-
-                    if (args.n_retrain_steps_after_pruning or args.n_retrain_epochs_after_pruning) and is_main:
-                        state_dict = torch.load(retrain_model_save_path)
-                        state_dict['accuracy'] = accuracy
-                        torch.save(state_dict, retrain_model_save_path)
-
-
-            if is_main:
-                logger.info('- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ')
-            # finetune
-            finetune_model_save_path = finetune_model_save_path_tem.format(
-                num_pruned_heads=num_pruned_heads, 
-                retrain_flag='_retrained' if args.n_retrain_steps_after_pruning or args.n_retrain_epochs_after_pruning else ''
-            )
-            if args.n_finetune_epochs_after_pruning or args.n_finetune_steps_after_pruning:
-                if is_main:
-                    logger.info("***** Running Fine-tuning *****")
-                state_dict_before_finetune = {
-                    'model': getattr(model, 'module', model).state_dict()
-                }
-                set_seeds(args.seed + step + 1, n_gpu)
-                if args.use_huggingface_trainer:
-                    training.huggingface_trainer_train(
-                        train_dataset=train_dataset,
-                        model=model,
-                        args=finetune_args
-                    )
-                else:
-                    training.train(
-                        train_dataset,
-                        model,
-                        finetune_optimizer,
-                        args.train_batch_size,
-                        n_steps=args.n_finetune_steps_after_pruning,
-                        n_epochs=args.n_finetune_epochs_after_pruning,
-                        device=device,
-                        verbose=True,
-                        local_rank=args.local_rank,
-                        num_workers=args.num_workers
-                    )
-
-                state_dict_after_finetune = {
-                    'model': getattr(model, 'module', model).state_dict()
-                }
-
-                if is_main:
-                    logger.info('- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ')
-
-                if args.eval_finetuned:
-                    # Print the pruning descriptor
-                    if is_main:
-                        logger.info("Evaluating following pruning strategy after finetuning")
-                        logger.info(pruning.to_pruning_descriptor(to_prune))
-                    # Eval accuracy
-                    scorer = Accuracy()
-                    accuracy = evaluate(
-                        eval_dataset,
-                        model,
-                        args.eval_batch_size,
-                        save_attention_probs=args.save_attention_probs,
-                        print_head_entropy=False,
-                        device=device,
-                        verbose=False,
-                        disable_progress_bar=args.no_progress_bars,
-                        scorer=scorer,
-                        distributed=args.local_rank != -1,
-                        num_workers=args.num_workers
-                    )[scorer.name]
-
-                    if is_main:
-                        logger.info("***** Finetuning eval results *****")
-                        tot_pruned = sum(len(heads) for heads in to_prune.values())
-                        logger.info(f"Finetuned {tot_pruned}\t{accuracy}")
-
-                        state_dict_after_finetune['accuracy'] = accuracy
-                        torch.save(state_dict_after_finetune, finetune_model_save_path)
-                        logger.info(f'Save finetuned model to {finetune_model_save_path}')
-
-                getattr(model, 'module', model).load_state_dict(state_dict_before_finetune['model'])
-                if is_main:
-                    logger.info('Loaded back the model before finetuning.')
 
 
 if __name__ == "__main__":

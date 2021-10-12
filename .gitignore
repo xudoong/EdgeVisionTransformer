@@ -4,3 +4,6 @@ play.py
 **/foo.sh
 **/__pycache__
 are_16_heads/training_log/
+are_16_heads/vendor
+are_16_heads/amlt
+are_16_heads/itp/.tmp/

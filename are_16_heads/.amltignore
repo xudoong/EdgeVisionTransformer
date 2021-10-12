@@ -1,0 +1,6 @@
+vendor/huggingface_transformers/docker
+vendor/huggingface_transformers/docs
+vendor/huggingface_transformers/examples
+vendor/huggingface_transformers/tests
+amlt/
+itp/.tmp

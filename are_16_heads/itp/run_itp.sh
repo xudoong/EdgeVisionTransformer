@@ -28,4 +28,13 @@ function iterative_pruning_base() {
     --output_dir /mnt/data/EdgeDL/are16heads_results/iterative/base
 }
 
+function finetune_many_base() {
+    python -m torch.distributed.launch --nproc_per_node 4 finetune_many.py \
+    --data_dir /mnt/data/EdgeDL/imagenet2012 \
+    --model_path /mnt/data/EdgeDL/are16heads_results/iterative/base \
+    --output_dir /mnt/data/EdgeDL/are16heads_results/ \
+    --finetune_learning_rate 0.000025 \
+    --n_finetune_epochs_after_pruning 3 \
+    --finetune_batch_size 64
+}
 $1 ""

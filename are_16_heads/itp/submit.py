@@ -43,12 +43,15 @@ job_template = \
   - ./itp/run_itp.sh {function}
 """
 
-
+func_to_job_name_dict = {
+  'iterative_pruning_base': 'D1009_are16heads_iterative_pruning_deit_base',
+  'finetune_many_base': 'D1013_are16heads_finetune_pruned_deit_base'
+}
 def main(mode):
   function = sys.argv[2]
-  assert function in ['iterative_pruning_base']
+  assert function in func_to_job_name_dict.keys()
   
-  job_name = f"D1009_are16heads_iterative_pruning_deit_base"  # !! Edit this
+  job_name = func_to_job_name_dict[function]  # !! Edit this
   jobs = ""
   jobs += job_template.format(
       job_name=job_name, gpu_cnt=4, function=function

@@ -191,6 +191,16 @@ function distributed_launch_finetune_another_port() {
     $OPTIONS
 }
 
+function distributed_launch_finetune() {
+    python -m torch.distributed.launch --nproc_per_node 4 /data/data1/v-xudongwang/benchmark_tools/are_16_heads/finetune.py \
+    --data_dir /data/data1/v-xudongwang/imagenet \
+    --eval_batch_size 500 \
+    --num_workers 8 \
+    --use_huggingface_trainer \
+    --eval_finetuned \
+    $OPTIONS
+}
+
 function debug() {
     # /data/data1/v-xudongwang/benchmark_tools/are_16_heads/run.sh distributed_launch \
     # --deit_type tiny \
@@ -219,7 +229,33 @@ function finetune_tiny() {
     --n_finetune_epochs_after_pruning 3 \
     --finetune_learning_rate 0.0001 \
     --output_dir /data/data1/v-xudongwang/models/torch_model/are_16_heads/iterative/tiny/deit_tiny_are16heads_prune$x; done
-
-
 }
+
+function finetune_small() {
+    for x in `seq 0 2 60`; do \
+    /data/data1/v-xudongwang/benchmark_tools/are_16_heads/run.sh distributed_launch_finetune \
+    --deit_type small \
+    --finetune_model_path /data/data1/v-xudongwang/models/torch_model/are_16_heads/iterative/small/deit_small_are16heads_prune$x/final \
+    --train_batch_size 128 \
+    --n_finetune_epochs_after_pruning 3 \
+    --finetune_learning_rate 0.00005 \
+    --output_dir /data/data1/v-xudongwang/models/torch_model/are_16_heads/iterative/small/deit_small_are16heads_prune$x; done
+}
+
+function eval_iterative_pruned_small() {
+    python -m torch.distributed.launch --nproc_per_node 2 --master_port 12345 /data/data1/v-xudongwang/benchmark_tools/are_16_heads/evaluate_iterative_pruned_deit.py \
+    --model_path /data/data1/v-xudongwang/models/torch_model/are_16_heads/iterative/small \
+    --eval_dir_of_models 
+}
+
+function finetune_many_tiny() {
+    python -m torch.distributed.launch --nproc_per_node 4 --master_port 12345 finetune_many.py \
+    --data_dir /data/data1/v-xudongwang/imagenet \
+    --model_path /data/data1/v-xudongwang/models/torch_model/are_16_heads/iterative/tiny \
+    --output_dir /data/data1/v-xudongwang/models/torch_model/are_16_heads/iterative/ \
+    --finetune_learning_rate 0.00005 \
+    --n_finetune_epochs_after_pruning 3 \
+    --finetune_batch_size 128
+}
+
 $TASK ""

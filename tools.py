@@ -255,6 +255,27 @@ def export_onnx_deit():
     export_onnx(model, onnx_model_path, input_shape, dynamic_batch=not fix_batch)
 
 
+def export_onnx_swin():
+    import torch
+    from utils import export_onnx, get_swin
+    parser = argparse.ArgumentParser()
+    parser.add_argument('func', help='specify the work to do.')
+    parser.add_argument('--output', required=True, type=str, help='onnx output path')
+    parser.add_argument('--input_shape', default='1,3,224,224', type=str, help='input shape')
+    parser.add_argument('--type', type=str, choices=['tiny', 'small', 'base'], default='base', help='swin config')
+    parser.add_argument('--swin_repo_root_path', default='/data/v-xudongwang/Swin-Transformer', type=str, help='Swin-Transformer github repo root path')
+    parser.add_argument('--fix_batch', action='store_true', dest='fix_batch')
+    parser.set_defaults(fix_batch=False)
+    args = parser.parse_args()
+
+    onnx_model_path = args.output
+    input_shape = [int(num) for num in args.input_shape.split(',')]
+    config_file_name = f'swin_{args.type}_patch4_window7_224'
+    fix_batch = args.fix_batch
+
+    model = get_swin(config_file_name, args.swin_repo_root_path)
+    export_onnx(model, onnx_model_path, input_shape, dynamic_batch=not fix_batch)
+
 def export_onnx_bert_huggingface():
     import torch
     from utils import get_huggingface_bert
@@ -953,6 +974,8 @@ def main():
         evaluate_deit_cmd()
     elif func == 'prune_deit':
         prune_deit_cmd()
+    elif func == 'export_onnx_swin':
+        export_onnx_swin()
 
 if __name__ == '__main__':
     main()

@@ -1,3 +1,51 @@
+'''======================================================================================================='''
+
+def import_from_path(name, path):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(name, path)
+    foo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(foo)
+    return foo.__getattribute__(name)
+
+
+def get_swin(config_file_name, swin_root_path):
+    import os
+    _update_config_from_file = import_from_path('_update_config_from_file', os.path.join(swin_root_path, 'config.py'))
+    _C = import_from_path('_C', os.path.join(swin_root_path, 'config.py'))
+    SwinTransformer = import_from_path('SwinTransformer', os.path.join(swin_root_path, 'models/swin_transformer.py'))
+
+    # get config
+    config = _C.clone()
+    config_file_path = os.path.join(swin_root_path, f'configs/{config_file_name}.yaml')
+    _update_config_from_file(config, config_file_path)
+
+    # build model
+    model_type = config.MODEL.TYPE
+    if model_type == 'swin':
+        model = SwinTransformer(img_size=config.DATA.IMG_SIZE,
+                                patch_size=config.MODEL.SWIN.PATCH_SIZE,
+                                in_chans=config.MODEL.SWIN.IN_CHANS,
+                                num_classes=config.MODEL.NUM_CLASSES,
+                                embed_dim=config.MODEL.SWIN.EMBED_DIM,
+                                depths=config.MODEL.SWIN.DEPTHS,
+                                num_heads=config.MODEL.SWIN.NUM_HEADS,
+                                window_size=config.MODEL.SWIN.WINDOW_SIZE,
+                                mlp_ratio=config.MODEL.SWIN.MLP_RATIO,
+                                qkv_bias=config.MODEL.SWIN.QKV_BIAS,
+                                qk_scale=config.MODEL.SWIN.QK_SCALE,
+                                drop_rate=config.MODEL.DROP_RATE,
+                                drop_path_rate=config.MODEL.DROP_PATH_RATE,
+                                ape=config.MODEL.SWIN.APE,
+                                patch_norm=config.MODEL.SWIN.PATCH_NORM,
+                                use_checkpoint=config.TRAIN.USE_CHECKPOINT)
+    else:
+        raise NotImplementedError(f"Unkown model: {model_type}")
+        
+    return model
+
+
+
+
 def get_torch_deit(type, image_size=224, pretrained=True):
     import timm
     import torch
@@ -644,14 +692,7 @@ def evaluate_deit_pipeline(type, state_dict_path, data_path, pretrained=False, b
     return evaluate_torch(model, data_loader, device)
 
 
-'''======================================================================================================='''
 
-def import_from_path(name, path):
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(name, path)
-    foo = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(foo)
-    return foo.__getattribute__(name)
 
 '''=======================================================================================================
     prune utils
@@ -668,3 +709,8 @@ def prune_deit_ffn_h(model, amount):
         prune.remove(fc1, 'weight')
         prune.remove(fc2, 'weight')
     return 0
+
+
+if __name__ == '__main__':
+    model = get_swin('swin_tiny_patch4_window7_224', '../Swin-Transformer')
+    print(model)

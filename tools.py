@@ -481,6 +481,7 @@ def mobile_benchmark():
     parser.add_argument('--benchmark_binary_dir', type=str, default='/data/tf_benchmark', help='directory of binary benchmark_model_plus_flex')
     parser.add_argument('--skip_push', action='store_true', dest='skip_push')
     parser.add_argument('--no_root', action='store_true', help='run cmd on phone without root')
+    parser.add_argument('--no_xnnpack', action='store_true', help='force not to use xnnpack delegate')
     parser.set_defaults(use_gpu=False)
     parser.set_defaults(skip_push=False)
     args = parser.parse_args()
@@ -495,6 +496,7 @@ def mobile_benchmark():
     serial_number = args.serial_number
     benchmark_binary_directory = args.benchmark_binary_dir
     no_root = args.no_root
+    no_xnnpack = args.no_xnnpack
 
     # patch for path related bugs on windows to linux
     if 'local/tmp' in benchmark_binary_directory:
@@ -504,7 +506,8 @@ def mobile_benchmark():
 
     adb = ADBConnect(serial_number)
     std_ms, avg_ms, mem_mb = run_on_android(model_path, adb, num_threads=num_threads, num_runs=num_runs, warmup_runs=warmup_runs, 
-                                            benchmark_binary_dir=benchmark_binary_directory, taskset_mask=mask, use_gpu=use_gpu, skip_push=skip_push, no_root=no_root)
+                                            benchmark_binary_dir=benchmark_binary_directory, taskset_mask=mask, use_gpu=use_gpu, 
+                                            skip_push=skip_push, no_root=no_root, no_xnnpack=no_xnnpack)
     print(std_ms / avg_ms * 100, f'Avg latency {avg_ms} ms,', f'Std {std_ms} ms. Mem footprint(MB): {mem_mb}')
 
 

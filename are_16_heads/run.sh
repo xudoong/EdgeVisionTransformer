@@ -258,4 +258,13 @@ function finetune_many_tiny() {
     --finetune_batch_size 128
 }
 
+function finetune_many_base() {
+    python -m torch.distributed.launch --nproc_per_node 1 --master_port 12345 /data/data1/v-xudongwang/benchmark_tools/are_16_heads/finetune_many.py \
+    --data_dir /data/data1/v-xudongwang/imagenet \
+    --model_path /data/data4/lzhani/teamdrive/EdgeDL/are16heads_results/iterative/base \
+    --output_dir /data/data4/lzhani/teamdrive/EdgeDL/are16heads_results/ \
+    --finetune_learning_rate 0.000025 \
+    --n_finetune_steps_after_pruning 40 \
+    --finetune_batch_size 16
+}
 $TASK ""

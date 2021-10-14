@@ -42,6 +42,9 @@ def add_argument(parser: argparse.ArgumentParser):
     parser.add_argument('--num_workers', default=8, type=int,
                         help='Number of workers to load data'
                         )
+    # eval args
+    parser.add_argument('--eval_batch_size', default=500, type=int,
+                         help='The batch size per gpu to perform evaluation.')
 
 
 def main():
@@ -136,19 +139,23 @@ def main():
     while i < len(model_list):
         model_name = model_list[i]
         output_dir = args.model_path / model_name
-        if 'final_finetuned' in os.listdir(output_dir) and len(os.listdir(output_dir / 'final_finetuned')) > 2:
+        # already finetuned
+        if 'final_finetuned' in os.listdir(output_dir) and 'config.json' in os.listdir(output_dir / 'final_finetuned'):
             if is_main: logger.info(f'{model_name} already finetuned. Skip. {os.listdir(output_dir / "final_finetuned")}')
+            if len(os.listdir(output_dir / 'final_finetuned')) < 3: # not evaluted yet
+                model = get_deit_model(output_dir / 'final_finetuned')
+                evaluate_func_wrapper(model, output_dir)
         else:
             if is_main: logger.info(f'*** Finetuning {model_name} ***')
-        model = get_deit_model(output_dir / 'final')
-        train_func_wrapper(model, output_dir)
-        evaluate_func_wrapper(model, output_dir)
+            model = get_deit_model(output_dir / 'final')
+            train_func_wrapper(model, output_dir)
+            evaluate_func_wrapper(model, output_dir)
 
         if is_main: logger.info('***************************************')
         model_list = sorted(os.listdir(args.model_path), key=lambda x: int(x[x.find('prune') + len('prune'): ]))
 
         i += 1
-        
+
     if is_main: logger.info('Done finetune. Exit Successfully.')
 
 if __name__ == '__main__':

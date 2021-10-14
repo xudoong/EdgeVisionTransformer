@@ -54,7 +54,7 @@ def main():
     dataset, _ = build_dataset(args.data_path, is_train=False, shuffle=False, return_dict=False)
 
     if args.local_rank != -1:
-        dist.init_process_group("gloo", rank=args.local_rank, world_size=torch.cuda.device_count())
+        dist.init_process_group("nccl", rank=args.local_rank, world_size=torch.cuda.device_count())
 
     if not args.eval_dir_of_models:
         evaluate_one_model(model_path=args.model_path / 'final', dataset=dataset, batch_size=args.batch_size, local_rank=args.local_rank, num_workers=args.num_workers)

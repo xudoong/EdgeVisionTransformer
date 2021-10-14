@@ -3,6 +3,8 @@ import argparse
 import timeit
 import numpy as np
 
+from benchmark import bench_utils
+
 def server_benchmark():
     import onnx
     import onnxruntime as ort
@@ -472,9 +474,13 @@ def mobile_benchmark():
     parser.add_argument('--model', required=True, type=str, help='tflitemodel path')
     parser.add_argument('--use_gpu', dest='use_gpu', action='store_true')
     parser.add_argument('--num_runs', type=int, default=10, help='number of runs')
-    parser.add_argument('--warm_ups', type=int, default=10)
+    parser.add_argument('--warmup_runs', type=int, default=10)
     parser.add_argument('--num_threads', type=int, default=1, help='number of threads')
+    parser.add_argument('--taskset_mask', type=str, default='10', help='mask of taskset to set cpu affinity')
+    parser.add_argument('--serial_number', type=str, default='98281FFAZ009SV', help='phone serial number in `adb devices`')
+    parser.add_argument('--benchmark_binary_dir', type=str, default='/data/tf_benchmark', help='directory of binary benchmark_model_plus_flex')
     parser.add_argument('--skip_push', action='store_true', dest='skip_push')
+    parser.add_argument('--no_root', action='store_true', help='run cmd on phone without root')
     parser.set_defaults(use_gpu=False)
     parser.set_defaults(skip_push=False)
     args = parser.parse_args()
@@ -483,11 +489,22 @@ def mobile_benchmark():
     use_gpu = args.use_gpu
     num_threads = args.num_threads
     num_runs = args.num_runs
-    warm_ups = args.warm_ups
+    warmup_runs = args.warmup_runs
     skip_push = args.skip_push
- 
-    adb = ADBConnect("98281FFAZ009SV")
-    std_ms, avg_ms, mem_mb = run_on_android(model_path, adb, use_gpu,num_threads=num_threads, num_runs=num_runs, warm_ups=warm_ups, skip_push=skip_push)
+    mask = args.taskset_mask
+    serial_number = args.serial_number
+    benchmark_binary_directory = args.benchmark_binary_dir
+    no_root = args.no_root
+
+    # patch for path related bugs on windows to linux
+    if 'local/tmp' in benchmark_binary_directory:
+        benchmark_binary_directory = '/data/local/tmp'
+    if 'tf_benchmark' in benchmark_binary_directory:
+        benchmark_binary_directory = '/data/tf_benchmark'
+
+    adb = ADBConnect(serial_number)
+    std_ms, avg_ms, mem_mb = run_on_android(model_path, adb, num_threads=num_threads, num_runs=num_runs, warmup_runs=warmup_runs, 
+                                            benchmark_binary_dir=benchmark_binary_directory, taskset_mask=mask, use_gpu=use_gpu, skip_push=skip_push, no_root=no_root)
     print(std_ms / avg_ms * 100, f'Avg latency {avg_ms} ms,', f'Std {std_ms} ms. Mem footprint(MB): {mem_mb}')
 
 

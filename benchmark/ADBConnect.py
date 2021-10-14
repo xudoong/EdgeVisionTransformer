@@ -24,9 +24,9 @@ class ADBConnect:
     def pull_files(self, src, dst):
         subprocess.check_output(f'adb -s {self.serial} pull {src} {dst}', shell=True)
     
-    def run_cmd(self, cmd):
+    def run_cmd(self, cmd, no_root=False):
         #print(self.serial)
-        results = subprocess.check_output(f'adb -s {self.serial} shell su -c {cmd}', shell=True).decode('utf-8')
+        results = subprocess.check_output(f'adb -s {self.serial} shell {"su -c" if not no_root else ""} {cmd}', shell=True).decode('utf-8')
         #print(results)
         #latency=get_avg_latency(results)
         #print(latency)

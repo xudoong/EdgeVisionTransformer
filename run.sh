@@ -45,7 +45,7 @@ function mobile_benchmark_mi() {
         --num_runs=30 \
         --warmup_runs=30 \
         --num_threads=1 \
-        --taskset_mask=c \
+        --taskset_mask=10 \
         --serial_number=2458c476 \
         --benchmark_binary_dir="/data/local/tmp" \
         --no_root \

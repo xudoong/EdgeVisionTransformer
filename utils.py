@@ -328,7 +328,27 @@ def get_ffn_plus_input(h=768, i=3072, n=128, is_tf=True, only_ffn=False):
         return ffn
 
 
-def fetch_latency_std(file_path, begin_line=0, end_line=None, precision=2, only_latency=False):
+def _fetch_value_from_text(text: str, marker: str, dtype):
+    begin = text.find(marker)
+    if begin == -1:
+        return None
+    begin += len(marker)
+    while begin < len(text) and not text[begin].isnumeric():
+        begin = begin + 1
+    end = begin
+    while end < len(text) and (text[end].isnumeric() or text[end] == '.'):
+        end += 1
+    
+    if dtype == 'int':
+        return int(text[begin: end])
+    if dtype == 'float':
+        return float(text[begin: end])
+    raise ValueError(f'dtype {dtype} should in [float, int]')
+
+def _fetch_float_from_text(text: str, marker: str):
+    return _fetch_value_from_text(text, marker, 'float')
+
+def fetch_latency_std(file_path, begin_line=0, end_line=None, precision=2):
     f = open(file_path)
     if end_line is None:
         lines = f.readlines()[begin_line:]
@@ -337,34 +357,26 @@ def fetch_latency_std(file_path, begin_line=0, end_line=None, precision=2, only_
 
     latency_list = []
     std_list = []
+    mem_list = []
 
     for line in lines:
         line = line.lower()
-        if line.find('latency') == -1: continue
-        begin = line.find('latency') + len('latency ')
-        while not line[begin].isnumeric():
-            begin += 1
-        end = begin
-        while line[end].isnumeric() or line[end] == '.':
-            end += 1
-        latency = float(line[begin: end])
-        latency_list.append(latency)
+        latency = _fetch_float_from_text(line, 'latency')
+        if latency:
+          latency_list.append(latency)
 
-        if not only_latency:
-            begin = line.find('std') + len('std ')
-            while not line[begin].isnumeric():
-                begin += 1
-            end = begin
-            while end < len(line) and line[end].isnumeric() or line[end] == '.':
-                end += 1
-            std = float(line[begin: end])
-
+        std = _fetch_float_from_text(line, 'std')
+        if std:
             std_list.append(std)
 
-    fmtL = "Q = " + ', '.join(["{:." + str(precision) + "f}"]*len(latency_list))
-    print(fmtL.format(*latency_list))
-    if not only_latency:
-        print(fmtL.format(*std_list))
+        mem = _fetch_float_from_text(line, 'footprint(mb):')
+        if mem:
+            mem_list.append(mem)
+
+    print("latency", [round(x, precision) for x in latency_list])
+    print("std", [round(x, precision) for x in std_list])
+    print("memory footprint(MB)", [round(x, precision) for x in mem_list])
+
 
 
 def get_onnx_model_inputs(model, dtype=None):

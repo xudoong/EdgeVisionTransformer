@@ -53,6 +53,19 @@ function mobile_benchmark_mi() {
     done
 }
 
+function mobile_benchmark_pixel4() {
+    for model in `ls ${MODEL_DIR}`
+    do
+        echo "********************" && echo $model &&
+        python tools.py mobile_benchmark \
+        --model "${MODEL_DIR}/$model" \
+        --num_runs=30 \
+        --warmup_runs=30 \
+        --num_threads=1 \
+        --taskset_mask=70
+    done
+}
+
 function mobile_benchmark_pixel4_thread4() {
     for model in `ls ${MODEL_DIR}`
     do

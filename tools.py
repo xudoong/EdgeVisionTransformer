@@ -32,7 +32,7 @@ def server_benchmark():
     )
     parser.add_argument(
         '--dtype',
-        default=None,
+        default='float32',
         type=str,
         help='input data type'
     )
@@ -266,6 +266,7 @@ def export_onnx_swin():
     parser.add_argument('--input_shape', default='1,3,224,224', type=str, help='input shape')
     parser.add_argument('--type', type=str, choices=['tiny', 'small', 'base'], default='base', help='swin config')
     parser.add_argument('--swin_repo_root_path', default='/data/v-xudongwang/Swin-Transformer', type=str, help='Swin-Transformer github repo root path')
+    parser.add_argument('--pretrained_path', default=None, type=str, help='pretrained state_dict path')
     parser.add_argument('--fix_batch', action='store_true', dest='fix_batch')
     parser.set_defaults(fix_batch=False)
     args = parser.parse_args()
@@ -274,8 +275,14 @@ def export_onnx_swin():
     input_shape = [int(num) for num in args.input_shape.split(',')]
     config_file_name = f'swin_{args.type}_patch4_window7_224'
     fix_batch = args.fix_batch
+    pretrained_path = args.pretrained_path
 
     model = get_swin(config_file_name, args.swin_repo_root_path)
+    if pretrained_path:
+        state_dict = torch.load(pretrained_path, map_location='cpu')
+        model.load_state_dict(state_dict['model'])
+        print(f'Load state_dict from {pretrained_path}')
+
     export_onnx(model, onnx_model_path, input_shape, dynamic_batch=not fix_batch)
 
 def export_onnx_bert_huggingface():

@@ -934,6 +934,30 @@ def prune_deit_cmd():
     torch.save(state_dict, args.output)
     print(f'Successfully save pruned deit {args.type} to {args.output}.')
 
+def save_tfhub_vit():
+    from utils import get_tfhub_vit
+    parser = argparse.ArgumentParser()
+    parser.add_argument('func', help='specify the work to do.')
+    parser.add_argument('--type', choices=['small', 'base'], help='vit model type')
+    parser.add_argument('--output', required=True, type=str, help='saved model output path')
+    args = parser.parse_args()
+
+    model = get_tfhub_vit(args.type)
+    model.save(args.output)
+
+def eval_tf():
+    from utils import evaluate_tf_pipeline
+    parser = argparse.ArgumentParser()
+    parser.add_argument('func', help='specify the work to do.')
+    parser.add_argument('--model', required=True, type=str, help='tensorflow keras saved_model_path')
+    parser.add_argument('--data_path', required=True, type=str, help='image net 1k dataset path')
+    parser.add_argument('--threads', default=8, type=int, help='num of threads to perform inference')
+    parser.add_argument('--num_workers', default=4, type=int, help='num of workers to load data')
+    parser.add_argument('--channel_last', action='store_true', help='input image is channel last')
+    args = parser.parse_args()
+
+    evaluate_tf_pipeline(args.model, args.data_path, args.threads, args.num_workers, args.channel_last)
+
 
 def main():
     func = sys.argv[1]
@@ -945,6 +969,8 @@ def main():
         export_onnx_deit()
     elif func == 'save_bert_encoder':
         save_bert_encoder()
+    elif func == 'save_tfhub_vit':
+        save_tfhub_vit()
     elif func == 'tf2tflite':
         tf2tflite_cmd()
     elif func == 'mobile_benchmark':
@@ -999,6 +1025,8 @@ def main():
         evaluate_tflite_cmd()
     elif func == 'eval_deit':
         evaluate_deit_cmd()
+    elif func == 'eval_tf':
+        eval_tf()
     elif func == 'prune_deit':
         prune_deit_cmd()
     elif func == 'export_onnx_swin':

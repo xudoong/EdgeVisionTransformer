@@ -129,6 +129,16 @@ def get_bert_encoder(num_layers, hidden_size, num_heads, seq_len, batch_size=Non
     model = tf.keras.Model(encoder_inputs, encoder_output)
     return model
 
+def get_tfhub_vit(type: str):
+    import tensorflow as tf
+    import tensorflow_hub as hub
+    model = tf.keras.Sequential([
+        tf.keras.layers.InputLayer(input_shape=[224, 224, 3]),
+        hub.KerasLayer("https://tfhub.dev/sayakpaul/vit_s16_classification/1") if type == 'small' else
+        hub.KerasLayer("https://tfhub.dev/sayakpaul/vit_b16_classification/1")
+    ])
+    return model
+
 
 def export_onnx(torch_model, output_path, input_shape, opset_version=12, dynamic_batch=True):
     import torch
@@ -646,6 +656,40 @@ def evaluate_tflite_pipeline(model_path, data_path, num_threads=8, num_workers=4
     return accuracy
 
 
+def evaluate_tf_pipeline(model_path, data_path, num_threads=8, num_workers=4, channel_last=False):
+    from datetime import datetime
+    import os
+    import numpy as np
+    import tensorflow as tf
+
+    print(f'{datetime.now().strftime("D%m%d %H:%M:%S")} Start evaluating {model_path} with dataset {data_path}')
+    
+    dataset, _ = build_eval_dataset(data_path)
+    data_loader = to_data_loader(dataset, batch_size=num_threads, num_workers=num_workers,)
+    
+    model = tf.keras.models.load_model(model_path)
+
+    total = 0
+    correct = 0
+    for images, target in data_loader:
+        images = images.numpy()
+        if channel_last:
+            images = np.transpose(images, [0, 2, 3, 1])
+        logits = model(images)
+        pred = np.argmax(logits, axis=1)
+
+        total += len(logits)
+        correct += np.sum(pred == target.numpy())
+
+        s = f'{datetime.now().strftime("D%m%d %H:%M:%S")} {total: 5d} / 50000 Accuracy: {correct / total * 100: .2f}%'
+        if total % min(100, int(100 // num_threads * num_threads)) == 0:
+            print (s)
+        
+    accuracy = correct / total * 100
+    print(f'Evaluate accuracy: {accuracy: .2f}%')
+    return accuracy
+
+
 def load_torch_deit_state_dict(model, state_dict_path):
     import torch
     state_dict = torch.load(state_dict_path)
@@ -722,7 +766,3 @@ def prune_deit_ffn_h(model, amount):
         prune.remove(fc2, 'weight')
     return 0
 
-
-if __name__ == '__main__':
-    model = get_swin('swin_tiny_patch4_window7_224', '../Swin-Transformer')
-    print(model)

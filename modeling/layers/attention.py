@@ -3,7 +3,6 @@ from einops.layers.tensorflow import Rearrange
 
 
 class Attention(tf.keras.Model):
-
     def __init__(self, dim, num_heads, h_k=None):
         if h_k is None:
             if dim % num_heads != 0:

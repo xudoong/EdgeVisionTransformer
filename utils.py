@@ -766,3 +766,11 @@ def prune_deit_ffn_h(model, amount):
         prune.remove(fc2, 'weight')
     return 0
 
+
+
+def add_keras_input_layer(model, input_shape, batch_size=None):
+    import tensorflow as tf
+    return tf.keras.Sequential([
+        tf.keras.layers.InputLayer(input_shape, batch_size=batch_size),
+        model
+    ])

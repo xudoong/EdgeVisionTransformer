@@ -1,14 +1,19 @@
 import argparse
+import re
 import sys
 
 
-def _replace_flex(name: str):
+def _replace_flex(name: str, type: str):
     op = name.split(':')[0].split('/')[-1]
     op = op.lower()
-    if 'transpose' in op: return 'TRANSPOSE'
-    if 'add' in op: return 'ADDv2'
-    if 'roll' in op: return 'ROLL'
-    if 'erf' in op: return 'ERF'
+    if type == 'swin':
+        if 'transpose' in op: return 'TRANSPOSE'
+        if 'add' in op: return 'ADDv2'
+        if 'roll' in op: return 'ROLL'
+        if 'erf' in op: return 'ERF'
+    if type == 't2t_vit':
+        if 'einsum' in op: return 'EINSUM'
+        if 'extractimagepatches' in op: return 'EXTRACTIMAGEPATCHES'
     return 'TFFLEXDELEGATE'
 
 def _find_begin_line(rows):
@@ -31,8 +36,9 @@ def _read_rows(file_path):
             rows.append(row)
     return rows
 
-def analyse_swin_base_op(parser: argparse.ArgumentParser):
+def analyse_op(parser: argparse.ArgumentParser):
     parser.add_argument('--file', type=str, required=True, help='csv profile result file')
+    parser.add_argument('--type', choices=['swin', 't2t_vit'], required=True, help='transformer model type')
     args = parser.parse_args()
 
     rows = _read_rows(args.file)
@@ -46,7 +52,7 @@ def analyse_swin_base_op(parser: argparse.ArgumentParser):
             break
         node_type = row[schema['node type']]
         if 'TfLiteFlexDelegate' in node_type:
-            node_type = _replace_flex(row[schema['name']])
+            node_type = _replace_flex(row[schema['name']], args.type)
         if node_type in result_table.keys():
             result_table[node_type]['latency'] += float(row[schema['avg_ms']])
             result_table[node_type]['percent'] += float(row[schema['%']][:-1])
@@ -58,10 +64,11 @@ def analyse_swin_base_op(parser: argparse.ArgumentParser):
     for k, v in result_table.items():
         print(f'{k} {v["latency"]: .2f} {v["percent"]: .2f}')
 
+
 def analyse_transformer_gelu_ln(parser: argparse.ArgumentParser):
     import csv
     parser.add_argument('--file', type=str, required=True, help='csv profile result file')
-    parser.add_argument('--type', choices=['deit', 'swin'], required=True, help='the transformer model type')
+    parser.add_argument('--type', choices=['deit', 'swin', 't2t_vit'], required=True, help='the transformer model type')
     args = parser.parse_args()
 
     rows = _read_rows(args.file)
@@ -80,24 +87,35 @@ def analyse_transformer_gelu_ln(parser: argparse.ArgumentParser):
         if len(row) < len(schema):
             break
         node_type = row[schema['node type']]
+
         if args.type == 'deit':
             if 'POW' in node_type:
                 hit_gelu += 1
                 for j in range(8):
                     gelu_latency += float(rows[i + j][schema['avg_ms']])
                     gelu_percent += float(rows[i + j][schema['%']][:-1])
-
             if 'FULLY_CONNECTED' not in node_type and 'RESHAPE' not in node_type and 'layer_normalization' in rows[i][schema['name']]:
                 hit_ln += 1
                 ln_latency += float(rows[i][schema['avg_ms']])
                 ln_percent += float(rows[i][schema['%']][:-1])
 
-        else: # args.type == 'swin
+        elif args.type == 'swin':
             if 'gelu' in rows[i][schema['name']].lower():
                 hit_gelu += 1
                 gelu_latency += float(rows[i][schema['avg_ms']])
                 gelu_percent += float(rows[i][schema['%']][:-1])
             if 'norm' in rows[i][schema['name']].lower():
+                hit_ln += 1
+                ln_latency += float(rows[i][schema['avg_ms']])
+                ln_percent += float(rows[i][schema['%']][:-1])
+
+        elif args.type == 't2t_vit':
+            if 'POW' in node_type:
+                hit_gelu += 1
+                for j in range(8):
+                    gelu_latency += float(rows[i + j][schema['avg_ms']])
+                    gelu_percent += float(rows[i + j][schema['%']][:-1])
+            if 'layer_normalization' in rows[i][schema['name']].lower():
                 hit_ln += 1
                 ln_latency += float(rows[i][schema['avg_ms']])
                 ln_percent += float(rows[i][schema['%']][:-1])
@@ -108,7 +126,7 @@ def analyse_transformer_gelu_ln(parser: argparse.ArgumentParser):
 
 
 function_dict = {
-    'analyse_swin_base_op': analyse_swin_base_op,
+    'analyse_op': analyse_op,
     'analyse_transformer_gelu_ln': analyse_transformer_gelu_ln
 }
 

@@ -3,7 +3,6 @@ import argparse
 import timeit
 import numpy as np
 
-from benchmark import bench_utils
 
 def server_benchmark():
     import onnx

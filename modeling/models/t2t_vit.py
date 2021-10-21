@@ -1,31 +1,44 @@
 import tensorflow as tf
 import numpy as np
-from tensorflow._api.v2 import image
 from modeling.layers.transformer_encoder import TokenPerformer, TransformerEncoderBlock
 from modeling.layers.embedding import get_sinusoid_encoding
 
-def tf_Unfold(kernel_size, stride, padding, channel_last=False):
+
+class tf_Unfold(tf.keras.Model):
     '''
     tensorflow implementation of torch.nn.Unfold
     expect input image to be channel-last
     '''
-    import tensorflow as tf
-    paddings = tf.constant([[0, 0], [padding, padding], [padding, padding], [0, 0]])
-    def _f(x):
-        x = tf.pad(x, paddings)
-        x = [tf.image.extract_patches(
-                x[:, :, :, i: i + 1],
-                sizes=[1, kernel_size, kernel_size, 1],
-                strides=[1, stride, stride, 1],
-                rates=[1, 1, 1, 1],
-                padding='VALID'
-            ) for i in range(x.shape[3])]
-        x = tf.concat(x, axis=3)
+    def __init__(self, kernel_size, stride, padding, channel_last=False, exact_same_as_torch=False):
+        super().__init__()
+        self.kernel_sizes = [1, kernel_size, kernel_size, 1]
+        self.strides = [1, stride, stride, 1]
+        self.paddings = tf.constant([[0, 0], [padding, padding], [padding, padding], [0, 0]])
+        self.channel_last = channel_last
+        self.exact_same_as_torch = exact_same_as_torch
+        
+    def call(self, x):
+        x = tf.pad(x, self.paddings)
+
+        if self.exact_same_as_torch:
+            x = [tf.image.extract_patches(
+                    x[:, :, :, i: i + 1],
+                    sizes=self.kernel_sizes,
+                    strides=self.strides,
+                    rates=[1, 1, 1, 1],
+                    padding='VALID'
+                ) for i in range(x.shape[3])]
+            x = tf.concat(x, axis=3)
+        else:
+            x = tf.image.extract_patches(
+                x, self.kernel_sizes, self.strides, [1, 1, 1, 1], 'VALID'
+            )
+
         x = tf.reshape(x, [-1, x.shape[1] * x.shape[2], x.shape[3]])
-        if not channel_last:
+        if not self.channel_last:
             x = tf.transpose(x, [0, 2, 1])
         return x
-    return _f
+
 
 class T2T_module(tf.keras.Model):
     """
@@ -120,3 +133,16 @@ class T2T_ViT(tf.keras.Model):
         x = self.forward_features(x)
         x = self.classifier_head(x)
         return x
+
+
+def get_t2t_vit_7():
+    return T2T_ViT(hidden_size=256, depth=7, num_heads=4, mlp_ratio=2)
+
+def get_t2t_vit_10():
+    return T2T_ViT(hidden_size=256, depth=10, num_heads=4, mlp_ratio=2)
+
+def get_t2t_vit_12():
+    return T2T_ViT(hidden_size=256, depth=12, num_heads=4, mlp_ratio=2)
+
+def get_t2t_vit_14():
+    return T2T_ViT(hidden_size=384, depth=14, num_heads=6, mlp_ratio=3)

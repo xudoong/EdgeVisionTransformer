@@ -59,8 +59,8 @@ function mobile_benchmark_pixel4() {
         echo "********************" && echo $model &&
         python tools.py mobile_benchmark \
         --model "${MODEL_DIR}/$model" \
-        --num_runs=30 \
-        --warmup_runs=30 \
+        --num_runs=10 \
+        --warmup_runs=15 \
         --num_threads=1 \
         --taskset_mask=70
     done

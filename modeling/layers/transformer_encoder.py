@@ -21,6 +21,21 @@ class TransformerEncoderBlock(tf.keras.Model):
         return self.net(x)
 
 
+class  TransformerEncoderBlock_Pruned(tf.keras.Model):
+    def __init__(self, hidden_size, num_layers, num_remain_heads_list, intermediate_size_list, head_size=64, norm_first=False):
+        super().__init__()
+        layers = []
+        for i in range(num_layers):
+            layers.extend([
+                LayerNorm(Residual(Attention(hidden_size, num_heads=num_remain_heads_list[i], h_k=head_size)), pre=norm_first),
+                LayerNorm(Residual(FeedForward(hidden_size, intermediate_size_list[i])), pre=norm_first)
+            ])
+        self.net = tf.keras.Sequential(layers)
+
+    def call(self, x):
+        return self.net(x)
+
+
 class TokenPerformer(tf.keras.Model):
     '''
     T2T-Module performer for T2T-ViT

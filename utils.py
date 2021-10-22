@@ -1,5 +1,9 @@
 '''======================================================================================================='''
 
+from tensorflow.python.framework.dtypes import _QUANTIZED_DTYPES_NO_REF
+from tensorflow.python.ops.gen_data_flow_ops import queue_enqueue_v2_eager_fallback
+
+
 def import_from_path(name, path):
     import importlib.util
     spec = importlib.util.spec_from_file_location(name, path)
@@ -77,6 +81,14 @@ def get_mobilenetv2():
     ])
     model.save('/data/v-xudongwang/models/tf_model/mobilenetv2.tf')
 
+def get_efficientnet_b0():
+    import tensorflow as tf
+    model = tf.keras.applications.efficientnet.EfficientNetB0()
+    model = tf.keras.Sequential([
+        tf.keras.layers.InputLayer(input_shape=[224, 224, 3], batch_size=1),
+        model
+    ])
+    model.save('/data/v-xudongwang/models/tf_model/efficientnetb0.tf')
 
 def get_huggingface_vit_model(patch_size=16, image_size=224):
     from transformers import ViTConfig, ViTModel
@@ -249,6 +261,24 @@ def tf2tflite(saved_model_path, output_path, is_keras=False, is_keras_model=Fals
     with open(output_path, 'wb') as f:
         f.write(tflite_model)
     print(f'Successfully convert model to {output_path}.')
+
+
+def tf2tflite_dir(saved_model_dir, output_dir, quantization, skip_existed=False):
+    quant_suffix_dict = dict(
+        dynamic = '_quant_dynamic',
+        float16 = '_quant_float16',
+    )
+    quant_suffix_dict['None'] = ''
+
+    import os
+    for model in sorted(os.listdir(saved_model_dir)):
+        name = model.replace('.tf', '')
+        src_path = os.path.join(saved_model_dir, model)
+        dst_path = os.path.join(output_dir, f'{name}{quant_suffix_dict[quantization]}.tflite')
+        if skip_existed and os.path.exists(dst_path):
+            print(f'{dst_path} exists, skip it.')
+        else:
+            tf2tflite(src_path, dst_path, quantization=quantization)
 
 
 def get_attention(h=768, a=12, h_k=None, is_tf=True, n=128):

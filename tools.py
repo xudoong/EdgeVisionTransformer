@@ -470,6 +470,19 @@ def tf2tflite_cmd():
     tf2tflite(saved_model_path, output_path, quantization=quant, use_flex=use_flex)
 
 
+def tf2tflite_dir_cmd():
+    from utils import tf2tflite_dir
+    parser = argparse.ArgumentParser()
+    parser.add_argument('func', help='specify the work to do.')
+    parser.add_argument('--input_dir',  required=True, type=str, help='input path')
+    parser.add_argument('--output_dir', required=True, type=str, help='output path')
+    parser.add_argument('--quantization', default='None', choices=['None', 'dynamic', 'float16'], type=str, help='quantization type')
+    parser.add_argument('--skip_existed', action='store_true', help='skip if the output tflite file exists')
+    args = parser.parse_args()
+
+    tf2tflite_dir(args.input_dir, args.output_dir, quantization=args.quantization, skip_existed=args.skip_existed)
+
+
 
 def mobile_benchmark():
     from benchmark.ADBConnect import ADBConnect
@@ -1033,6 +1046,9 @@ def main():
         prune_deit_cmd()
     elif func == 'export_onnx_swin':
         export_onnx_swin()
+    elif func == 'tf2tflite_dir':
+        tf2tflite_dir_cmd()
+
 
 if __name__ == '__main__':
     main()

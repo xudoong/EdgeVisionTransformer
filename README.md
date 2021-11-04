@@ -3,7 +3,7 @@ Tools to measure the inference performance of vision transformers on mobile devi
 
 The folder *model_zoo* contains the tflite models we tested.
 
-The folder *modeling.models* contains our tensorflow implemented ViT (DeiT) and T2T-ViT model. Thanks for the work of https://github.com/kamalkraj/Vision-Transformer and https://github.com/yitu-opensource/T2T-ViT. The tensorflow swin-transformer is from https://github.com/rishigami/Swin-Transformer-TF.git.
+The folder *modeling.models* contains our tensorflow implemented ViT (DeiT) and T2T-ViT model,based on https://github.com/kamalkraj/Vision-Transformer and https://github.com/yitu-opensource/T2T-ViT. The tensorflow swin-transformer is from https://github.com/rishigami/Swin-Transformer-TF.git.
 
 # Usage
 First clone this repo and install dependencies.
@@ -97,7 +97,7 @@ python -m torch.distributed.launch --nproc_per_node 4 src/train_main.py --deit_m
 Additionally, during experiment, we found kd (knowledge distillation) could help improve accuracy a lot. You can add kd into pruning or finetuning  by appending the following arguments:
 
 ```bash
---do_distil --alpha_distil=0.9 --teacher_model=facebook:deit-base-patch16-224 
+--do_distil --alpha_distil=0.9 --teacher_model=facebook/deit-base-patch16-224 
 ```
 
 

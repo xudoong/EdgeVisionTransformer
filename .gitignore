@@ -6,4 +6,14 @@ play.py
 are_16_heads/training_log/
 are_16_heads/vendor
 are_16_heads/amlt
-are_16_heads/itp/.tmp/
+are_16_heads/itp
+deit_pruning/itp
+deit_pruning/results
+deit_pruning/logs
+deit_pruning/vendor/nn_pruning
+deit_pruning/vendor/onnx_scripts
+deit_pruning/vendor/nn_pruning_v1/analysis
+deit_pruning/vendor/nn_pruning_v1/docs
+deit_pruning/vendor/nn_pruning_v1/examples
+deit_pruning/vendor/nn_pruning_v1/notebooks
+model_zoo

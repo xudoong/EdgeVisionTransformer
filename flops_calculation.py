@@ -1,5 +1,5 @@
 """Computes the flops needed for training/running transformer networks."""
-
+"""Borrowed from https://github.com/google-research/electra/blob/8a46635f32083ada044d7e9ad09604742600ee7b/flops_computation.py"""
 import collections
 from sys import path
 

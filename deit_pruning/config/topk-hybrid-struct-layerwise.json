@@ -1,0 +1,13 @@
+{
+  "dense_pruning_method": "topK:1d_alt", 
+  "attention_pruning_method": "topK", 
+  "initial_threshold": 1.0, 
+  "initial_warmup": 1,
+  "final_warmup": 3,
+  "attention_block_rows": 64,
+  "attention_block_cols": 256,
+  "attention_output_with_dense": 0,
+  "regularization_final_lambda": 20,
+  "dense_lambda": 0.25,
+  "regularization": "l1"
+}

@@ -1,6 +1,7 @@
 """Computes the flops needed for training/running transformer networks."""
 
 import collections
+from sys import path
 
 # We checked this code with TensorFlow"s FLOPs counting, although we had to
 # correct for this issue: https://github.com/tensorflow/tensorflow/issues/22071
@@ -59,7 +60,7 @@ class TransformerHparams(object):
         self.output_frac = output_frac  # percent of tokens using an output softmax
         self.sparse_embed_lookup = sparse_embed_lookup  # sparse embedding lookups
         self.decoder = decoder  # decoder has extra attn to encoder states
-
+        print(self.h, self.kqv, self.heads, self.i)
     def get_block_flops(self):
         """Get the forward-pass FLOPs for a single transformer block."""
         attn_mul = 2 if self.decoder else 1
@@ -157,7 +158,6 @@ class ViTHparams(TransformerHparams):
       else:
         self.mlp_dim = mlp_dim
       
-
     def get_embedding_flops(self):
       embedding_flops = {}
       embedding_flops.update(dict(
@@ -181,6 +181,24 @@ class ViTHparams(TransformerHparams):
         return (self.get_embedding_flops() + 
               self.l * self.get_block_flops() + 
               self.get_classification_flops())
+
+
+class PrunedViTHparams(ViTHparams):
+    def __init__(self, num_heads_per_layer, ffn_sparsity_per_layer, **kwargs):
+        intermediate_size = int((1 - ffn_sparsity_per_layer) * kwargs.pop('i', kwargs['h'] * 4))
+        head_size = kwargs.pop('head_size', 64)
+        super().__init__(heads=num_heads_per_layer, head_size=head_size, i=intermediate_size, **kwargs)
+
+
+def get_pruned_deit_flops(type, num_heads_per_layer, ffn_sparsity_per_layer):
+    assert type in ['tiny', 'small', 'base']
+    hidden_size_dict = {'tiny': 192, 'small': 384, 'base': 768}
+    h = hidden_size_dict[type]
+    return PrunedViTHparams(num_heads_per_layer=num_heads_per_layer,
+                            ffn_sparsity_per_layer=ffn_sparsity_per_layer, 
+                            h=h, l=12
+    ).get_infer_flops()
+
 
 def get_electra_train_flops(
         h_d, l_d, h_g, l_g, batch_size, train_steps, tied_embeddings,
@@ -260,11 +278,55 @@ MY_FLOPS = dict(
     deit_tiny = ViTHparams(l=12, h=192, image_size=224).get_infer_flops()
 )
 
+
+def show_pruned_deit_flops():
+    type2heads_dict = {'tiny': 3, 'small': 6, 'base': 12}
+    print('=== MACs of Pruned DeiT === (MMACs)')
+    print('** 1) only prune ffn ***')
+    for type in ['tiny', 'small', 'base']:
+        flops_list = []
+        num_heads = type2heads_dict[type]
+        for sparsity in range(0, 100, 10):
+            sparsity /= 100
+            flops = get_pruned_deit_flops(type, num_heads_per_layer=num_heads, ffn_sparsity_per_layer=sparsity)
+            flops_list.append(round(flops / 2e6, 2))
+        print(type, flops_list)
+
+    print('** 2) only prune head ***')
+    for type in ['tiny', 'small', 'base']:
+        flops_list = []
+        num_heads = type2heads_dict[type]
+        for heads in range(1, num_heads + 1):
+            flops = get_pruned_deit_flops(type, num_heads_per_layer=heads, ffn_sparsity_per_layer=0)
+            flops_list.append(round(flops / 2e6, 2))
+        print(type, flops_list)
+
+    print('** 3) prune head + ffn **')
+    tiny_flops_list = []
+    tiny_flops_list.append(round(get_pruned_deit_flops('tiny', 2, 0.1) / 2e6, 2))
+    tiny_flops_list.append(round(get_pruned_deit_flops('tiny', 2, 0.2) / 2e6, 2))
+    tiny_flops_list.append(round(get_pruned_deit_flops('tiny', 2, 0.3) / 2e6, 2))
+    print('tiny head2 ffn ', tiny_flops_list)
+
+    small_flops_list = []
+    small_flops_list.append(round(get_pruned_deit_flops('small', 4, 0.1) / 2e6, 2))
+    small_flops_list.append(round(get_pruned_deit_flops('small', 4, 0.2) / 2e6, 2))
+    small_flops_list.append(round(get_pruned_deit_flops('small', 4, 0.3) / 2e6, 2))
+    small_flops_list.append(round(get_pruned_deit_flops('small', 4, 0.4) / 2e6, 2))
+    small_flops_list.append(round(get_pruned_deit_flops('small', 5, 0.1) / 2e6, 2))
+    small_flops_list.append(round(get_pruned_deit_flops('small', 5, 0.2) / 2e6, 2))
+    small_flops_list.append(round(get_pruned_deit_flops('small', 5, 0.3) / 2e6, 2))
+    small_flops_list.append(round(get_pruned_deit_flops('small', 5, 0.4) / 2e6, 2))
+    print('small head4', small_flops_list[:4])
+    print('small head5', small_flops_list[4:])
+
+
 def main():
     # for k, v in MODEL_FLOPS.items():
     #     print(k, v)
     for k, v in MY_FLOPS.items():
         print(k, v)
+    show_pruned_deit_flops()
 
 if __name__ == "__main__":
     main()

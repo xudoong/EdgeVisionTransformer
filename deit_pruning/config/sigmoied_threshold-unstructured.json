@@ -1,0 +1,16 @@
+{
+  "dense_pruning_method": "sigmoied_threshold", 
+  "attention_pruning_method": "sigmoied_threshold", 
+  "initial_threshold": 0.0, 
+  "final_threshold": 0.1, 
+  "initial_warmup": 1,
+  "final_warmup": 3,
+  "attention_block_rows": 1,
+  "attention_block_cols": 1,
+  "dense_block_rows": 1,
+  "dense_block_cols": 1,
+  "attention_output_with_dense": 0,
+  "regularization_final_lambda": 20,
+  "dense_lambda": 0.25,
+  "regularization": "l1"
+}

@@ -1,9 +1,5 @@
 '''======================================================================================================='''
 
-from tensorflow.python.framework.dtypes import _QUANTIZED_DTYPES_NO_REF
-from tensorflow.python.ops.gen_data_flow_ops import queue_enqueue_v2_eager_fallback
-
-
 def import_from_path(name, path):
     import importlib.util
     spec = importlib.util.spec_from_file_location(name, path)
@@ -395,12 +391,16 @@ def fetch_latency_std(file_path, begin_line=0, end_line=None, precision=2):
     else:
         lines = f.readlines()[begin_line: end_line]
 
+    name_list = []
     latency_list = []
     std_list = []
     mem_list = []
 
     for line in lines:
-        line = line.lower()
+        line = line.lower().rstrip('\n')
+        if line.endswith('.tflite'):
+            name_list.append(line[: -len('.tflite')])
+
         latency = _fetch_float_from_text(line, 'latency')
         if latency:
           latency_list.append(latency)
@@ -413,6 +413,7 @@ def fetch_latency_std(file_path, begin_line=0, end_line=None, precision=2):
         if mem:
             mem_list.append(mem)
 
+    print('name', *name_list)
     print("latency", [round(x, precision) for x in latency_list])
     print("std", [round(x, precision) for x in std_list])
     print("memory footprint(MB)", [round(x, precision) for x in mem_list])

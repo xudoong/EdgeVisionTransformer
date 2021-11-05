@@ -447,6 +447,7 @@ def export_onnx_proxyless_mobile():
     model = proxyless_mobile(pretrained=False)
     export_onnx(model, 'models/onnx_model/proxyless_mobile.onnx', [1,3,224,224])
 
+
 def tf2tflite_cmd():
     import tensorflow as tf
     from utils import tf2tflite
@@ -454,20 +455,21 @@ def tf2tflite_cmd():
     parser.add_argument('func', help='specify the work to do.')
     parser.add_argument('--input',  required=True, type=str, help='input path')
     parser.add_argument('--output', required=True, type=str, help='output path')
-    parser.add_argument('--keras', dest='keras', action='store_true')
-    parser.add_argument('--quantization', default='None', choices=['None', 'dynamic', 'float16'], type=str, help='quantization type')
+    parser.add_argument('--quantization', default='None', choices=['None', 'dynamic', 'float16', 'int8'], type=str, help='quantization type')
     parser.set_defaults(keras=False)
-    parser.add_argument('--not_use_flex', action='store_false', dest='use_flex', help='specify not to use flex op')
+    parser.add_argument('--no_flex', action='store_false', dest='use_flex', help='specify not to use flex op')
+    parser.add_argument('--input_shape', type=str, default=None, help='input_shape to generate fake dataset when perform int8 quantization')
     parser.set_defaults(use_flex=True)
     args = parser.parse_args()
 
-    saved_model_path = args.input
-    output_path = args.output
-    is_keras = args.keras
-    quant = args.quantization
-    use_flex = args.use_flex
-    
-    tf2tflite(saved_model_path, output_path, quantization=quant, use_flex=use_flex)
+    if args.quantization == 'int8' and args.input_shape is None:
+        raise ValueError('--input_shape must be specified when performing int8 quantization.')
+
+    input_shape=None
+    if args.input_shape:
+        input_shape = [int(x) for x in args.input_shape.split(',')]
+
+    tf2tflite(args.input, args.output, quantization=args.quantization, use_flex=args.use_flex, input_shape=input_shape)
 
 
 def tf2tflite_dir_cmd():
@@ -476,11 +478,16 @@ def tf2tflite_dir_cmd():
     parser.add_argument('func', help='specify the work to do.')
     parser.add_argument('--input_dir',  required=True, type=str, help='input path')
     parser.add_argument('--output_dir', required=True, type=str, help='output path')
-    parser.add_argument('--quantization', default='None', choices=['None', 'dynamic', 'float16'], type=str, help='quantization type')
+    parser.add_argument('--quantization', default='None', choices=['None', 'dynamic', 'float16', 'int8'], type=str, help='quantization type')
     parser.add_argument('--skip_existed', action='store_true', help='skip if the output tflite file exists')
+    parser.add_argument('--input_shape', type=str, default=None, help='input_shape to generate fake dataset when perform int8 quantization')
     args = parser.parse_args()
 
-    tf2tflite_dir(args.input_dir, args.output_dir, quantization=args.quantization, skip_existed=args.skip_existed)
+    input_shape=None
+    if args.input_shape:
+        input_shape = [int(x) for x in args.input_shape.split(',')]
+    
+    tf2tflite_dir(args.input_dir, args.output_dir, quantization=args.quantization, skip_existed=args.skip_existed, input_shape=input_shape)
 
 
 

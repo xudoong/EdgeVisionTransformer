@@ -223,13 +223,9 @@ def onnx2tflite(onnx_model_path, output_path, save_tf=False, model_home=None):
     print('Convert successfully.')
 
 
-def tf2tflite(saved_model_path, output_path, is_keras=False, is_keras_model=False, quantization='None', use_flex=True):
+def tf2tflite(saved_model_path, output_path, is_keras=False, quantization='None', use_flex=True, input_shape=None):
     import tensorflow as tf
-    # Convert the model
-    if is_keras_model:
-        model = saved_model_path
-        converter = tf.lite.TFLiteConverter.from_keras_model(model)
-    elif is_keras:
+    if is_keras:
         model = tf.keras.models.load_model(saved_model_path)
         converter = tf.lite.TFLiteConverter.from_keras_model(model)
     else:
@@ -242,15 +238,29 @@ def tf2tflite(saved_model_path, output_path, is_keras=False, is_keras_model=Fals
     elif quantization == 'dynamic':
         print('Apply dynamic range quantization.')
         converter.optimizations = [tf.lite.Optimize.DEFAULT]
+    elif quantization == 'int8':
+        print('Apply int8 quantization')
+        def representative_data_gen():
+            #  for input_value in tf.data.Dataset.from_tensor_slices(train_images).batch(1).take(100):
+            #      yield [input_value]
+            for _ in range (100):
+                yield [tf.random.normal(input_shape)]
+        converter.optimizations = [tf.lite.Optimize.DEFAULT]
+        converter.representative_dataset = representative_data_gen
+        # Ensure that if any ops can't be quantized, the converter throws an error
+        converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+        # Set the input and output tensors to uint8 (APIs added in r2.3)
+        converter.inference_input_type = tf.uint8
+        converter.inference_output_type = tf.uint8
 
     if use_flex:
         print('Use Flex Delegate.')
-        converter.target_spec.supported_ops = [
-            tf.lite.OpsSet.TFLITE_BUILTINS, # enable TensorFlow Lite ops.
+        converter.target_spec.supported_ops.append(
             tf.lite.OpsSet.SELECT_TF_OPS # enable TensorFlow ops.
-        ]
+        )
     else:
         print('Not use Flex Delegate.')
+
     tflite_model = converter.convert()
 
     # Save the model.
@@ -259,7 +269,7 @@ def tf2tflite(saved_model_path, output_path, is_keras=False, is_keras_model=Fals
     print(f'Successfully convert model to {output_path}.')
 
 
-def tf2tflite_dir(saved_model_dir, output_dir, quantization, skip_existed=False):
+def tf2tflite_dir(saved_model_dir, output_dir, quantization, skip_existed=False, input_shape=None):
     quant_suffix_dict = dict(
         dynamic = '_quant_dynamic',
         float16 = '_quant_float16',
@@ -274,7 +284,7 @@ def tf2tflite_dir(saved_model_dir, output_dir, quantization, skip_existed=False)
         if skip_existed and os.path.exists(dst_path):
             print(f'{dst_path} exists, skip it.')
         else:
-            tf2tflite(src_path, dst_path, quantization=quantization)
+            tf2tflite(src_path, dst_path, quantization=quantization, input_shape=input_shape)
 
 
 def get_attention(h=768, a=12, h_k=None, is_tf=True, n=128):

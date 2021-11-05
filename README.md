@@ -1,9 +1,9 @@
 # EdgeVisionTransformer
 Tools to measure the inference performance of vision transformers on mobile devices, plus pruning methods adopted from previous work: [are16heads](https://github.com/pmichel31415/are-16-heads-really-better-than-1) , [nn_pruning](https://github.com/huggingface/nn_pruning).
 
-The folder *model_zoo* contains the tflite models we tested.
+This [link](https://github.com/RendezvousHorizon/EdgeVisionTransformer/releases/download/v1.0-storage/tflite_models.zip) contains the tflite models we tested.
 
-The folder *modeling.models* contains our tensorflow implemented ViT (DeiT) and T2T-ViT model,based on https://github.com/kamalkraj/Vision-Transformer and https://github.com/yitu-opensource/T2T-ViT. The tensorflow swin-transformer is from https://github.com/rishigami/Swin-Transformer-TF.git.
+The folder *modeling.models* contains our tensorflow implemented ViT (DeiT) and T2T-ViT model, based on https://github.com/kamalkraj/Vision-Transformer and https://github.com/yitu-opensource/T2T-ViT. The tensorflow swin-transformer is from https://github.com/rishigami/Swin-Transformer-TF.git.
 
 # Usage
 First clone this repo and install dependencies.

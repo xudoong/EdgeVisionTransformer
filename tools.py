@@ -528,11 +528,11 @@ def mobile_benchmark():
     use_xnnpack = args.use_xnnpack
     profiling_output_csv_file = args.profiling_output_csv_file
 
-    # # patch for path related bugs on windows to linux
-    # if 'local/tmp' in benchmark_binary_directory:
-    #     benchmark_binary_directory = '/data/local/tmp'
-    # if 'tf_benchmark' in benchmark_binary_directory:
-    #     benchmark_binary_directory = '/data/tf_benchmark'
+    # patch for path related bugs on windows to linux
+    if 'local/tmp' in benchmark_binary_directory:
+        benchmark_binary_directory = '/data/local/tmp'
+    if 'tf_benchmark' in benchmark_binary_directory:
+        benchmark_binary_directory = '/data/tf_benchmark'
 
     adb = ADBConnect(serial_number)
     std_ms, avg_ms, mem_mb = run_on_android(model_path, adb, num_threads=num_threads, num_runs=num_runs, warmup_runs=warmup_runs, 

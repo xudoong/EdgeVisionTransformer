@@ -255,9 +255,11 @@ def tf2tflite(saved_model_path, output_path, is_keras=False, quantization='None'
 
     if use_flex:
         print('Use Flex Delegate.')
-        converter.target_spec.supported_ops.append(
+        converter.target_spec.supported_ops = [
+            tf.lite.OpsSet.TFLITE_BUILTINS_INT8 if quantization== 'int8' else tf.lite.OpsSet.TFLITE_BUILTINS,
             tf.lite.OpsSet.SELECT_TF_OPS # enable TensorFlow ops.
-        )
+        ]
+
     else:
         print('Not use Flex Delegate.')
 

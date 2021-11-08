@@ -47,7 +47,6 @@ function mobile_benchmark_mi() {
         --num_threads=1 \
         --taskset_mask=70 \
         --serial_number=2458c476 \
-        --benchmark_binary_dir="/data/local/tmp" \
         --no_root \
         $OPTIONS # --no_xnnpack
     done
@@ -59,7 +58,7 @@ function mobile_benchmark_pixel4() {
         echo "********************" && echo $model &&
         python tools.py mobile_benchmark \
         --model "${MODEL_DIR}/$model" \
-        --num_runs=10 \
+        --num_runs=20 \
         --warmup_runs=15 \
         --num_threads=1 \
         --taskset_mask=70

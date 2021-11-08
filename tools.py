@@ -508,10 +508,11 @@ def mobile_benchmark():
     parser.add_argument('--bin_name', default='benchmark_model_plus_flex_r27', type=str, help='benchmark binary name')
     parser.add_argument('--skip_push', action='store_true', dest='skip_push')
     parser.add_argument('--no_root', action='store_true', help='run cmd on phone without root')
-    parser.add_argument('--use_xnnpack', default=False, type=bool, help='specify whether to use xnnpack delegate')
+    parser.add_argument('--use_xnnpack', default='store_true', dest='use_xnnpack', help='use xnnpack delegate, default false')
     parser.add_argument('--profiling_output_csv_file', default=None, type=str, help='do profiling and save output to this path')
     parser.set_defaults(use_gpu=False)
     parser.set_defaults(skip_push=False)
+    parser.set_defaults(use_xnnpack=False)
     args = parser.parse_args()
 
     model_path = args.model

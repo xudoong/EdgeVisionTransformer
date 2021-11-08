@@ -410,7 +410,7 @@ def fetch_latency_std(file_path, begin_line=0, end_line=None, precision=2):
 
     for line in lines:
         line = line.lower().rstrip('\n')
-        if line.endswith('.tflite'):
+        if line.endswith('.tflite') and ' ' not in line:
             name_list.append(line[: -len('.tflite')])
 
         latency = _fetch_float_from_text(line, 'latency')

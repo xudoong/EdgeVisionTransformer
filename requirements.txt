@@ -1,4 +1,4 @@
-tensorflow==2.5.1
+tensorflow>=2.5.2
 onnx-tf==1.8.0
 timm==0.4.12
 torch==1.9.1

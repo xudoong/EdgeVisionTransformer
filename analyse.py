@@ -1,7 +1,11 @@
 import argparse
 import re
 import sys
+from types import prepare_class
 
+'''--------------------------------------------------------------
+Tools to analyse tflite benchmark_model profiling output csv file.
+--------------------------------------------------------------'''
 
 def _replace_flex(name: str, type: str):
     op = name.split(':')[0].split('/')[-1]
@@ -65,7 +69,7 @@ def analyse_op(parser: argparse.ArgumentParser):
         print(f'{k} {v["latency"]: .2f} {v["percent"]: .2f}')
 
 
-def analyse_transformer_gelu_ln(parser: argparse.ArgumentParser):
+def analyse_gelu_ln(parser: argparse.ArgumentParser):
     import csv
     parser.add_argument('--file', type=str, required=True, help='csv profile result file')
     parser.add_argument('--type', choices=['deit', 'swin', 't2t_vit'], required=True, help='the transformer model type')
@@ -125,9 +129,71 @@ def analyse_transformer_gelu_ln(parser: argparse.ArgumentParser):
         hit_gelu, hit_ln, gelu_latency, gelu_percent, ln_latency, ln_percent))
 
 
+def analyse_attn_ffn(parser: argparse.ArgumentParser):
+    import csv
+    parser.add_argument('--file', type=str, required=True, help='csv profile result file')
+    parser.add_argument('--type', choices=['deit', 'swin', 't2t_vit'], required=True, help='the transformer model type')
+    args = parser.parse_args()
+
+    rows = _read_rows(args.file)
+    begin_line, schema = _find_begin_line(rows)
+    print(f'Schema: {schema}')
+
+    attn_percent = 0
+    attn_latency = 0
+    ffn_percent = 0
+    ffn_latency = 0
+    pre_post_processing_percent = 0
+    pre_post_processing_latency = 0
+
+    for i in range(begin_line, len(rows)):
+        row = rows[i]
+        if len(row) < len(schema):
+            break
+        node_type = row[schema['node type']]
+
+        if args.type == 'swin':
+            if 'window_attention' in rows[i][schema['name']]:
+                attn_latency += float(rows[i][schema['avg_ms']])
+                attn_percent += float(rows[i][schema['%']][:-1])
+            if 'mlp' in rows[i][schema['name']]:
+                ffn_latency += float(rows[i][schema['avg_ms']])
+                ffn_percent += float(rows[i][schema['%']][:-1])
+            if 'sequential_4' not in rows[i][schema['name']]:
+                pre_post_processing_latency += float(rows[i][schema['avg_ms']])
+                pre_post_processing_percent += float(rows[i][schema['%']][:-1])
+
+        if args.type == 'deit':
+            if 'attention' in rows[i][schema['name']]:
+                attn_latency += float(rows[i][schema['avg_ms']])
+                attn_percent += float(rows[i][schema['%']][:-1])
+            if 'feed_forward' in rows[i][schema['name']]:
+                ffn_latency += float(rows[i][schema['avg_ms']])
+                ffn_percent += float(rows[i][schema['%']][:-1])
+            if 'transformer_encoder_block' not in rows[i][schema['name']]:
+                pre_post_processing_latency += float(rows[i][schema['avg_ms']])
+                pre_post_processing_percent += float(rows[i][schema['%']][:-1])
+
+        if args.type == 't2t_vit':
+            if 'transformer_encoder_block' in rows[i][schema['name']] and 'attention' in rows[i][schema['name']]:
+                attn_latency += float(rows[i][schema['avg_ms']])
+                attn_percent += float(rows[i][schema['%']][:-1])
+            if 'transformer_encoder_block' in rows[i][schema['name']] and 'feed_forward' in rows[i][schema['name']]:
+                ffn_latency += float(rows[i][schema['avg_ms']])
+                ffn_percent += float(rows[i][schema['%']][:-1])
+            if 'transformer_encoder_block' not in rows[i][schema['name']]:
+                pre_post_processing_latency += float(rows[i][schema['avg_ms']])
+                pre_post_processing_percent += float(rows[i][schema['%']][:-1])
+
+    print(f'{args.type} | attn (percent, latency) = ({attn_percent:.2f}, {attn_latency:.2f}) | ' + 
+          f'ffn (percent, latency) = ({ffn_percent:.2f}, {ffn_latency:.2f}) | ' +
+          f'pre & post-processing (percent, latency) = ({pre_post_processing_percent:.2f}, {pre_post_processing_latency:.2f})')
+
+
 function_dict = {
     'analyse_op': analyse_op,
-    'analyse_transformer_gelu_ln': analyse_transformer_gelu_ln
+    'analyse_gelu_ln': analyse_gelu_ln,
+    'analyse_attn_ffn': analyse_attn_ffn,
 }
 
 if __name__ == '__main__':

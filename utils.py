@@ -1,5 +1,10 @@
 '''======================================================================================================='''
 
+import os
+
+import torch
+
+
 def import_from_path(name, path):
     import importlib.util
     spec = importlib.util.spec_from_file_location(name, path)
@@ -150,6 +155,9 @@ def get_tfhub_vit(type: str):
 
 def export_onnx(torch_model, output_path, input_shape, opset_version=12, dynamic_batch=True):
     import torch
+    import os
+    if not os.path.exists(os.path.dirname(output_path)):
+        os.makedirs(os.path.dirname(output_path))
 
     torch.onnx.export(
         torch_model,
@@ -165,7 +173,10 @@ def export_onnx(torch_model, output_path, input_shape, opset_version=12, dynamic
                                                   'output' : {0 : 'batch_size'}}
     )
 
-    print(f'Successfully export model to {output_path} as onnx.')
+    print(f'Successfully export model to {output_path}.')
+
+def export_onnx_fix_batch(torch_model, output_path, input_shape, opset_version=12):
+    export_onnx(torch_model, output_path, input_shape, opset_version, dynamic_batch=False)
 
 
 def get_flops(model):
@@ -223,8 +234,14 @@ def onnx2tflite(onnx_model_path, output_path, save_tf=False, model_home=None):
     print('Convert successfully.')
 
 
-def tf2tflite(saved_model_path, output_path, is_keras=False, quantization='None', use_flex=True, input_shape=None):
+def tf2tflite(saved_model_path: str, output_path: str, is_keras=False, quantization='None', use_flex=True, input_shape=None):
     import tensorflow as tf
+    import os
+
+    assert output_path.endswith('.tflite')
+    if os.path.dirname(output_path) != '' and not os.path.exists(os.path.dirname(output_path)):
+        os.makedirs(os.path.dirname(output_path))
+
     if is_keras:
         model = tf.keras.models.load_model(saved_model_path)
         converter = tf.lite.TFLiteConverter.from_keras_model(model)
@@ -250,8 +267,9 @@ def tf2tflite(saved_model_path, output_path, is_keras=False, quantization='None'
         # Ensure that if any ops can't be quantized, the converter throws an error
         converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
         # Set the input and output tensors to uint8 (APIs added in r2.3)
-        converter.inference_input_type = tf.uint8
-        converter.inference_output_type = tf.uint8
+        # Change to int8 on 2021/11/19
+        converter.inference_input_type = tf.int8
+        converter.inference_output_type = tf.int8
 
     if use_flex:
         print('Use Flex Delegate.')
@@ -275,6 +293,7 @@ def tf2tflite_dir(saved_model_dir, output_dir, quantization, skip_existed=False,
     quant_suffix_dict = dict(
         dynamic = '_quant_dynamic',
         float16 = '_quant_float16',
+        int8 = '_quant_int8'
     )
     quant_suffix_dict['None'] = ''
 

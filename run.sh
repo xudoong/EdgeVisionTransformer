@@ -62,7 +62,8 @@ function mobile_benchmark_pixel4() {
         --num_runs=20 \
         --warmup_runs=15 \
         --num_threads=1 \
-        --taskset_mask=70
+        --taskset_mask=70 \
+        $OPTIONS
     done
 }
 
@@ -91,4 +92,16 @@ function mobile_benchmark_pixel4_thread8() {
         --taskset_mask=ff
     done
 }
+
+function onnx_benchmark() {
+    for model in `ls ${MODEL_DIR}`
+    do
+        python tools.py server_benchmark \
+        --model "${MODEL_DIR}/$model" \
+        --num_runs=30 \
+        --warmup_runs=30 \
+        --precision=3
+    done
+}
+
 $TASK ""

@@ -7,9 +7,10 @@ import numpy as np
 def server_benchmark():
     import onnx
     import onnxruntime as ort
-    import torch 
     import numpy as np
+    import os
     from utils import get_onnx_model_inputs
+
 
     parser = argparse.ArgumentParser()
     parser.add_argument('func', help='specify the work to do.')
@@ -24,7 +25,7 @@ def server_benchmark():
                         default=50,
                         help="number of times to run per sample. By default, the value is 1000 / samples")
     parser.add_argument(
-        '--warm_ups',
+        '--warmup_runs',
         required=False,
         type=int,
         default=50,
@@ -73,7 +74,7 @@ def server_benchmark():
     model = onnx.load(args.model)
 
     # warm up
-    for _ in range(args.warm_ups):
+    for _ in range(args.warmup_runs):
         input = get_onnx_model_inputs(model, args.dtype)
         if args.io_binding:
             io_binding.bind_cpu_input('input', input['input'])
@@ -106,7 +107,7 @@ def server_benchmark():
         latency_list = latency_list[:args.top]
     avg_latency = np.average(latency_list)
     std_latency = np.std(latency_list)
-    print(f'Avg latency: {avg_latency * 1000: .{args.precision}f} ms, Std: {std_latency * 1000: .{args.precision}f} ms.')
+    print(f'{os.path.basename(args.model)}  Avg latency: {avg_latency * 1000: .{args.precision}f} ms, Std: {std_latency * 1000: .{args.precision}f} ms.')
 
 
 def test_tf_latency():

@@ -1,6 +1,9 @@
 '''======================================================================================================='''
 
 import os
+from subprocess import check_call
+from typing import List
+from onnx import save_model
 
 import torch
 
@@ -177,6 +180,13 @@ def export_onnx(torch_model, output_path, input_shape, opset_version=12, dynamic
 
 def export_onnx_fix_batch(torch_model, output_path, input_shape, opset_version=12):
     export_onnx(torch_model, output_path, input_shape, opset_version, dynamic_batch=False)
+
+def export_onnx_fix_batch_from_keras(model, output_path):
+    import os
+    import subprocess
+    model.save('tmp.tf')
+    subprocess.run(['python', '-m', 'tf2onnx.convert', '--saved-model', 'tmp.tf', '--output', output_path, '--opset', '12'], check=True)
+    subprocess.run(['rm', '-r', 'tmp.tf'], check=True)
 
 
 def get_flops(model):
@@ -451,18 +461,22 @@ def fetch_latency_std(file_path, begin_line=0, end_line=None, precision=2):
 
 
 
-def get_onnx_model_inputs(model, dtype=None):
+def get_onnx_model_inputs(model, dtype=None, input_shape=None):
     import numpy as np
     inputs = {}
     for input in model.graph.input:
         name = input.name
         shape = []
-        tensor_type = input.type.tensor_type
-        for d in tensor_type.shape.dim:
-            if d.HasField('dim_value'):
-                shape.append(d.dim_value)
-            else:
-                shape.append(1)
+        if input_shape:
+            shape = input_shape
+        else:
+            tensor_type = input.type.tensor_type
+            for d in tensor_type.shape.dim:
+                if d.HasField('dim_value'):
+                    shape.append(d.dim_value)
+                else:
+                    shape.append(1)
+        # to handle bert input 
         if len(shape) == 4 or dtype=='float32':
             inputs[name] = np.random.randn(*shape).astype(np.float32)
         else:
@@ -836,3 +850,48 @@ def add_keras_input_layer(model, input_shape, batch_size=None):
         tf.keras.layers.InputLayer(input_shape, batch_size=batch_size),
         model
     ])
+
+
+
+def trt_benchmark(model_path, input_shape=None, num_runs=50, warmup_runs=20, topk=None):
+    import torch
+    from torch2trt import TRTModule
+    import timeit
+    import numpy as np
+
+    def run_one_inference(model_trt, input):
+        torch.cuda.current_stream().synchronize()
+        start_time = timeit.default_timer()
+        _ = model_trt(input)
+        torch.cuda.current_stream().synchronize()
+        end_time = timeit.default_timer()
+        return (end_time - start_time) * 1000
+
+    # load state_dict, to ease benchmark (avoid providing input_shape every time), 
+    # when saving state_dict, we use the format {'input_shape': <input_shape as List>, 'model': model_trt.state_dict()}
+    # so the parameter input_shape is not necessary
+    state_dict: dict = torch.load(model_path)
+    if input_shape is None and 'input_shape' not in state_dict.keys():
+        raise ValueError('Input shape must be provided when loading a model w/o input_shape key.')
+    if input_shape is None:
+        input_shape = state_dict['input_shape']
+
+    model_trt = TRTModule()
+    model_trt.load_state_dict(state_dict['model'] if 'input_shape' in state_dict.keys() else state_dict)
+    model_trt.eval()
+    print(model_trt)
+
+    input = torch.randn(input_shape).cuda()
+    for _ in range(warmup_runs):
+        run_one_inference(model_trt, input)
+
+    latency_list = []
+    for _ in range(num_runs):
+        latency_list.append(run_one_inference(model_trt, input))
+
+    if topk:
+        latency_list = latency_list.sort()[:topk]
+
+    avg_latency = np.average(latency_list)
+    std_latency = np.std(latency_list)
+    return avg_latency, std_latency

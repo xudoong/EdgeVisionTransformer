@@ -98,10 +98,24 @@ function onnx_benchmark() {
     do
         python tools.py server_benchmark \
         --model "${MODEL_DIR}/$model" \
-        --num_runs=30 \
+        --num_runs=200 \
+        --top=30 \
         --warmup_runs=30 \
-        --precision=3
+        --precision=3 \
+        $OPTIONS
     done
 }
 
+
+function trt_benchmark() {
+    for model in `ls ${MODEL_DIR}`
+    do 
+        python benchmark/tensorrt/onnx_trt_test.py \
+        --model "${MODEL_DIR}/$model" \
+        --num_runs=100 \
+        --warmup_runs=30 \
+        --top=20 \
+        $OPTIONS
+    done
+}
 $TASK ""

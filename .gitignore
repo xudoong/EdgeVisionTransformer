@@ -17,3 +17,4 @@ deit_pruning/vendor/nn_pruning_v1/docs
 deit_pruning/vendor/nn_pruning_v1/examples
 deit_pruning/vendor/nn_pruning_v1/notebooks
 model_zoo
+tmp*

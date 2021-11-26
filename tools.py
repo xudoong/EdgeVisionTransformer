@@ -58,6 +58,12 @@ def server_benchmark():
         choices=[2,3,4,5,6],
         type=int,
     )
+    parser.add_argument(
+        '--input_shape',
+        default=None,
+        type=str,
+        help='input_shape'
+    )
     parser.set_defaults(io_binding=False)
     args = parser.parse_args()
 
@@ -86,7 +92,7 @@ def server_benchmark():
     # run
     latency_list = []
     for _ in range(args.num_runs):
-        input = get_onnx_model_inputs(model, args.dtype)
+        input = get_onnx_model_inputs(model, args.dtype, [int(x) for x in args.input_shape.split(',')] if args.input_shape else None)
         if args.io_binding:
             io_binding.bind_cpu_input('input', input['input'])
             io_binding.bind_output('output')
@@ -800,7 +806,7 @@ def export_onnx_dense():
         output_path = f'models/onnx_model/dense_i{input_size}_o{output_size}_n{n}.onnx'
     
     model = get_dense_plus_input(input_size, output_size, n=n, is_tf=False)
-    export_onnx(model, output_path, input_shape=[1, n, input_size])
+    export_onnx(model, output_path, input_shape=[1, n, input_size], dynamic_batch=False)
 
 
 def fetch_latency_std_cmd():
@@ -984,6 +990,23 @@ def eval_tf():
 
     evaluate_tf_pipeline(args.model, args.data_path, args.threads, args.num_workers, args.channel_last)
 
+def trt_benchmark_cmd():
+    import os
+    from utils import trt_benchmark
+    parser = argparse.ArgumentParser()
+    parser.add_argument('func', help='specify the work to do.')
+    parser.add_argument('--model', required=True, type=str, help="torch state_dict path")
+    parser.add_argument('--input_shape', default=None, type=str, help='model input shape, currently only support one input')
+    parser.add_argument('--num_runs', default=50, type=int, help='number of inference runs')
+    parser.add_argument('--warmup_runs', default=20, type=int, help='number of warmup runs')
+    parser.add_argument('--topk', default=None, type=int, help='take the avg of top k latency to reduce variance')
+    parser.add_argument('--precision', default=2, type=int, help='the precision of latency result')
+    args = parser.parse_args()
+
+    input_shape = [int(x) for x in args.input_shape.split(',')] if args.input_shape else None
+    avg_ms, std_ms = trt_benchmark(args.model, input_shape, args.num_runs, args.warmup_runs, args.topk)
+
+    print(f'{os.path.basename(args.model)}  Avg latency: {avg_ms: .{args.precision}f} ms, Std: {std_ms: .{args.precision}f} ms.')
 
 def main():
     func = sys.argv[1]
@@ -1059,6 +1082,8 @@ def main():
         export_onnx_swin()
     elif func == 'tf2tflite_dir':
         tf2tflite_dir_cmd()
+    elif func == 'trt_benchmark':
+        trt_benchmark_cmd()
 
 
 if __name__ == '__main__':

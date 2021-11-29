@@ -1,4 +1,5 @@
 import os
+from re import X
 import sys
 import argparse
 
@@ -29,7 +30,7 @@ def main():
     tflite_dir = os.path.join(args.model_zoo_dir, 'tflite_model', 'quant_op_test')
 
     # save dense models
-    '''
+    
     for x in range(160, 225):
         model = make_model([197, 192], layers.Dense(x))
         model.save(os.path.join(tf_dir, 'dense_out', f'dense197_192_{x}.tf'))
@@ -83,23 +84,23 @@ def main():
                     os.path.join(tflite_dir, 'dense_nhi2d', 'fp32', f'dense{n}_{h}_{i}.tflite'),
                     [n, h]
                 )
-    '''
+    
     for x in range(0, 13):
-        # model = make_model([197, 768], layers.Dense(1<<x))
-        # model.save(os.path.join(tf_dir, 'dense_out3', f'dense197_768_{(1<<x):04}.tf'))
-        # quant_model(
-        #     os.path.join(tf_dir, 'dense_out3', f'dense197_768_{(1<<x):04}.tf'),
-        #     os.path.join(tflite_dir, 'dense_out3', 'fp32',  f'dense197_768_{(1<<x):04}.tflite'),
-        #     [1, 197, 768]
-        # )
+        model = make_model([197, 768], layers.Dense(1<<x))
+        model.save(os.path.join(tf_dir, 'dense_out3', f'dense197_768_{(1<<x):04}.tf'))
+        quant_model(
+            os.path.join(tf_dir, 'dense_out3', f'dense197_768_{(1<<x):04}.tf'),
+            os.path.join(tflite_dir, 'dense_out3', 'fp32',  f'dense197_768_{(1<<x):04}.tflite'),
+            [1, 197, 768]
+        )
 
-        # model = make_model([197, 1<<x], layers.Dense(768))
-        # model.save(os.path.join(tf_dir, 'dense_in3', f'dense197_{(1<<x):04}_768.tf'))
-        # quant_model(
-        #     os.path.join(tf_dir, 'dense_in3', f'dense197_{(1<<x):04}_768.tf'),
-        #     os.path.join(tflite_dir, 'dense_in3', 'fp32',  f'dense197_{(1<<x):04}_768.tflite'),
-        #     [1, 197, 1<<x]
-        # )
+        model = make_model([197, 1<<x], layers.Dense(768))
+        model.save(os.path.join(tf_dir, 'dense_in3', f'dense197_{(1<<x):04}_768.tf'))
+        quant_model(
+            os.path.join(tf_dir, 'dense_in3', f'dense197_{(1<<x):04}_768.tf'),
+            os.path.join(tflite_dir, 'dense_in3', 'fp32',  f'dense197_{(1<<x):04}_768.tflite'),
+            [1, 197, 1<<x]
+        )
 
         model = make_model([1<<x, 768], layers.Dense(768))
         model.save(os.path.join(tf_dir, 'dense_n3', f'dense{(1<<x):04}_768_768.tf'))
@@ -108,7 +109,6 @@ def main():
             os.path.join(tflite_dir, 'dense_n3', 'fp32', f'dense{(1<<x):04}_768_768.tflite'),
             [1, 1<<x, 768]
         )
-    return           
 
     # save conv
     for x in [1, 3, 5, 7]:
@@ -129,14 +129,23 @@ def main():
             os.path.join(tflite_dir, 'conv_kernel2', 'fp32', f'conv_k{x}_i320_o320_hw14.tflite'),
             [1, 14, 14, 320]
         )
-
-    for x in range(16, 49):
+    
+    for x in range(1, 128 + 1):
         model = make_model([56, 56, 32], layers.Conv2D(x, 3, padding='same'))
-        model.save(os.path.join(tf_dir, 'conv_cout', f'conv_k3_i32_o{x}_hw56.tf'))
+        model.save(os.path.join(tf_dir, 'conv_cout', f'conv_k3_i32_o{x:03}_hw56.tf'))
         quant_model(
-            os.path.join(tf_dir, 'conv_cout', f'conv_k3_i32_o{x}_hw56.tf'),
-            os.path.join(tflite_dir, 'conv_cout', 'fp32', f'conv_k3_i32_o{x}_hw56.tflite'),
+            os.path.join(tf_dir, 'conv_cout', f'conv_k3_i32_o{x:03}_hw56.tf'),
+            os.path.join(tflite_dir, 'conv_cout', 'fp32', f'conv_k3_i32_o{x:03}_hw56.tflite'),
             [1, 56, 56, 32]
+        )
+
+    for x in range(1, 128 + 1):
+        model = make_model([56, 56, x], layers.Conv2D(32, 3, padding='same'))
+        model.save(os.path.join(tf_dir, 'conv_cin', f'conv_k3_i{x:03}_o32_hw56.tf'))
+        quant_model(
+            os.path.join(tf_dir, 'conv_cin', f'conv_k3_i{x:03}_o32_hw56.tf'),
+            os.path.join(tflite_dir, 'conv_cin', 'fp32', f'conv_k3_i{x:03}_o32_hw56.tflite'),
+            [1, 56, 56, x]
         )
 
     # save dwconv

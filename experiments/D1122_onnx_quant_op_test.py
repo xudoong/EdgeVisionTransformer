@@ -43,6 +43,7 @@ class OnnxOpTester:
         print(f'Save {fp32_output_path} done.')
 
     def _save_dense(self):
+        
         # === varying output size ===
         for x in range(160, 224 + 1):
             model = torch.nn.Linear(in_features=192, out_features=x)
@@ -73,7 +74,7 @@ class OnnxOpTester:
             model = torch.nn.Linear(in_features=x, out_features=192)
             output_path = os.path.join(self.output_dir, 'dense_in2', 'fp32', f'dense197_{x:02}_192.onnx')
             self._save_model(model, output_path, [1, 197, x])
-
+       
         # === varying all 3 ===
         for n in [8, 16, 197]:
             for i in [192, 768, 3072]:
@@ -81,12 +82,20 @@ class OnnxOpTester:
                     model = torch.nn.Linear(in_features=h, out_features=i)
                     output_path = os.path.join(self.output_dir, 'dense_group', 'fp32', f'dense{n:03}_{h:03}_{i:04}.onnx')
                     self._save_model(model, output_path, [1, n, h])
-
-        # === varying input size (3rd range) ===
+        
+        # === varying nhi by 2**x (3rd range) ===
         for x in range(0, 12 + 1):
-            model = torch.nn.Linear(in_features=(1 << x), out_features=768)
-            output_path = os.path.join(self.output_dir, 'dense_in3', 'fp32', f'dense197_{(1 << x):04}_768.onnx')
-            self._save_model(model, output_path, [1, 197, x])
+            model = torch.nn.Linear(in_features=(1<<x), out_features=768)
+            output_path = os.path.join(self.output_dir, 'dense_in3', 'fp32', f'dense197_{(1<<x):04}_768.onnx')
+            self._save_model(model, output_path, [1, 197, 1<<x])
+
+            model = torch.nn.Linear(in_features=768, out_features=(1<<x))
+            output_path = os.path.join(self.output_dir, 'dense_out3', 'fp32', f'dense197_768_{(1<<x):04}.onnx')
+            self._save_model(model, output_path, [1, 197, 768])
+
+            model = torch.nn.Linear(in_features=768, out_features=768)
+            output_path = os.path.join(self.output_dir, 'dense_n3', 'fp32', f'dense{(1<<x):04}_768_768.onnx')
+            self._save_model(model, output_path, [1, 1<<x, 768])
 
 
     def _save_conv(self):
@@ -107,6 +116,12 @@ class OnnxOpTester:
             model = torch.nn.Conv2d(in_channels=32, out_channels=x, kernel_size=3, padding=1)
             output_path = os.path.join(self.output_dir, 'conv_cout', 'fp32', f'conv_k3_i32_o{x:03}_hw56.onnx')
             self._save_model(model, output_path, [1, 32, 56, 56])
+
+        # === varying input channel size ===
+        for x in range(1, 128 + 1 + 1, 1):
+            model = torch.nn.Conv2d(in_channels=x, out_channels=32, kernel_size=3, padding=1)
+            output_path = os.path.join(self.output_dir, 'conv_cin', 'fp32', f'conv_k3_i{x:03}_o32_hw56.onnx')
+            self._save_model(model, output_path, [1, x, 56, 56])
 
     def _save_dwconv(self):
         # === varying kernel size ===

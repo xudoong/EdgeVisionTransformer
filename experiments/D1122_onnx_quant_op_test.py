@@ -97,6 +97,12 @@ class OnnxOpTester:
             output_path = os.path.join(self.output_dir, 'dense_n3', 'fp32', f'dense{(1<<x):04}_768_768.onnx')
             self._save_model(model, output_path, [1, 1<<x, 768])
 
+        # === varying output size (4th range) ===
+        for x in range(2, 224 + 1, 2):
+            model = torch.nn.Linear(in_features=192, out_features=x)
+            output_path = os.path.join(self.output_dir, 'dense_out4', 'fp32', f'dense197_192_{x:03}.onnx')
+            self._save_model(model, output_path, [1, 197, 192])
+
 
     def _save_conv(self):
         # === varying kernel size ===

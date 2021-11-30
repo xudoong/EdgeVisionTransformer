@@ -68,7 +68,7 @@ def model_optimize_cli():
 
 
 
-def openvino_benchmark(openvino_root_path, benchmark_app_path, model_path, niter=10, num_threads=1, batch_size=1, device='CPU'):
+def openvino_benchmark(benchmark_app_path, model_path, niter=10, num_threads=1, batch_size=1, device='CPU'):
     # setup_envs_path = os.path.join(openvino_root_path, 'bin')
     # source_cmd = f'"{os.path.join(setup_envs_path, os.listdir(setup_envs_path)[0])}"'
     benchmark_cmd = f'python "{benchmark_app_path}" -m "{model_path}" -niter={niter} -nthreads={num_threads} -b={batch_size} -d {device} -nireq=1 -api=sync --report_type=detailed_counters'

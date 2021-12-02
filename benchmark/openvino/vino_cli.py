@@ -1,6 +1,9 @@
 import os
 import sys
 import argparse
+import csv
+import re
+import subprocess
 
 
 def get_root_parser():
@@ -67,33 +70,34 @@ def model_optimize_cli():
         model_optimize(mo_path, model_path, output_dir, batch_size, input_shape=input_shape, data_type=data_type)
 
 
-
-def openvino_benchmark(benchmark_app_path, model_path, niter=10, num_threads=1, batch_size=1, device='CPU'):
+def openvino_benchmark(benchmark_app_path, model_path, niter=10, num_threads=1, batch_size=1, device='CPU', re_pattern=r'Total', csv_output_dir=None, show_detail=True):
     # setup_envs_path = os.path.join(openvino_root_path, 'bin')
     # source_cmd = f'"{os.path.join(setup_envs_path, os.listdir(setup_envs_path)[0])}"'
     benchmark_cmd = f'python "{benchmark_app_path}" -m "{model_path}" -niter={niter} -nthreads={num_threads} -b={batch_size} -d {device} -nireq=1 -api=sync --report_type=detailed_counters'
     # cmd = source_cmd + ' && ' + benchmark_cmd
     print(benchmark_cmd)
-    os.system(benchmark_cmd)
-    if os.name == 'nt':
-        os.system('type benchmark_detailed_counters_report.csv')
-    else:
-        os.system('cat benchmark_detailed_counters_report.csv')
+    subprocess.run(benchmark_cmd, shell=True)
+
+    if show_detail:
+        if os.name == 'nt':
+            os.system('type benchmark_detailed_counters_report.csv')
+        else:
+            os.system('cat benchmark_detailed_counters_report.csv')
 
     latency = 0.0
-    import csv 
     with open('benchmark_detailed_counters_report.csv', 'r') as f:
         csvreader = csv.reader(f, delimiter=';')
-        fields = next(csvreader)
-        row = None
         for r in csvreader:
-            if len(r) and r[0].lower() == 'total':
-                row = r
-        if row: 
-            latency = float(row[4])
+            if len(r) and re.fullmatch(re_pattern, r[0]):
+                latency += float(r[4])
 
-    os.remove('benchmark_detailed_counters_report.csv')
-    os.remove('benchmark_report.csv')
+    if csv_output_dir:
+        subprocess.run(f'mv benchmark_detailed_counters_report.csv {csv_output_dir}', shell=True)
+        subprocess.run(f'mv benchmark_report.csv {csv_output_dir}', shell=True)
+    else:
+        os.remove('benchmark_detailed_counters_report.csv')
+        os.remove('benchmark_report.csv')
+    
     return latency       
 
 

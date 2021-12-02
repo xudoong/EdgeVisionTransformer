@@ -12,7 +12,8 @@ MODEL_LIST = [
     'shufflenet-v2-x1.0',
     'inception-resnet-v2-tf',
     'efficientnet-b0',
-    'resnet-50-tf',
+    'resnet-34-pytorch',
+    'resnet-50-tf', 
 ]
 
 
@@ -36,6 +37,7 @@ class ModelExporter:
             f'python $VINO_QUANTER --name={",".join(self.model_list)} --model_dir={self.ir_model_dir} --dataset_dir=datasets/imagenet2012 --output_dir={self.ir_model_dir} --precisions=FP32-INT8', shell=True)
 
     def benchmark(self):
+        print('========== Benchmarking model performance on CPU with 1 thread')
         latency_list_fp32 = []
         latency_list_int8 = []
 
@@ -50,7 +52,7 @@ class ModelExporter:
             latency_list_fp32.append(latency_fp32)
             latency_list_int8.append(latency_int8)
 
-        print('===== SUMMARY =====')
+        print('== SUMMARY ==')
         print(self.model_list)
         print('FP32 Latency:')
         print([round(v, 2) for v in latency_list_fp32])

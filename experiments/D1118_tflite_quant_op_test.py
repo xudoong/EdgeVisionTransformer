@@ -30,7 +30,6 @@ def main():
     tflite_dir = os.path.join(args.model_zoo_dir, 'tflite_model', 'quant_op_test')
 
     # save dense models
-    
     for x in range(160, 225):
         model = make_model([197, 192], layers.Dense(x))
         model.save(os.path.join(tf_dir, 'dense_out', f'dense197_192_{x}.tf'))

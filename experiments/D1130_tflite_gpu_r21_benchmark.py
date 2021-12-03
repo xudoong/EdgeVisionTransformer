@@ -35,17 +35,23 @@ def main():
     latency_list_f32 = []
     latency_list_f16 = []
 
-    for name in sorted(os.listdir(args.model_dir))[0:]:
-        name_list.append(os.path.splitext(os.path.basename(name))[0])
-        model_path = os.path.join(args.model_dir, name)
-        dst_path = f'/sdcard/{name}'
-        adb.push(model_path, dst_path)
-        result_f32 = adb.run_cmd(f'"cd /data/local/tmp && ./benchmark_model_fixed_group_size --graph={dst_path} --use_gpu=true --precision=F32"')
-        result_f16 = adb.run_cmd(f'"cd /data/local/tmp && ./benchmark_model_fixed_group_size --graph={dst_path} --use_gpu=true --precision=F16"')
-        adb.remove(dst_path)
-
-        latency_list_f32.append(fetch_number(result_f32, 'comp_avg_ms='))
-        latency_list_f16.append(fetch_number(result_f16, 'comp_avg_ms='))
+    for name in sorted(os.listdir(args.model_dir)):
+        f32_ms = 0
+        f16_ms = 0
+        try:
+            name_list.append(os.path.splitext(os.path.basename(name))[0])
+            model_path = os.path.join(args.model_dir, name)
+            dst_path = f'/sdcard/{name}'
+            adb.push(model_path, dst_path)
+            result_f32 = adb.run_cmd(f'"cd /data/local/tmp && ./benchmark_model_fixed_group_size --graph={dst_path} --use_gpu=true --precision=F32"')
+            result_f16 = adb.run_cmd(f'"cd /data/local/tmp && ./benchmark_model_fixed_group_size --graph={dst_path} --use_gpu=true --precision=F16"')
+            adb.remove(dst_path)
+            f32_ms = fetch_number(result_f32, 'comp_avg_ms=')
+            f16_ms = fetch_number(result_f16, 'comp_avg_ms=')
+        except:
+            pass
+        latency_list_f32.append(f32_ms)
+        latency_list_f16.append(f16_ms)
         
         print(name_list[-1], round(latency_list_f32[-1], args.precision), round(latency_list_f16[-1], args.precision))
 

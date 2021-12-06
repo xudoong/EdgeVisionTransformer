@@ -50,17 +50,17 @@ def main():
             f16_ms = fetch_number(result_f16, 'comp_avg_ms=')
         except:
             pass
-        latency_list_f32.append(f32_ms)
-        latency_list_f16.append(f16_ms)
+        latency_list_f32.append(round(f32_ms, args.precision))
+        latency_list_f16.append(round(f16_ms, args.precision))
         
-        print(name_list[-1], round(latency_list_f32[-1], args.precision), round(latency_list_f16[-1], args.precision))
+        print(name_list[-1], f32_ms, f16_ms)
 
     print('==== LATENCY SUMMARY ====')
     print(name_list)
     print('[F32 Latency]')
-    print([round(v, args.precision) for v in latency_list_f32])
+    print(latency_list_f32)
     print('[F16 Latency]')
-    print([round(v, args.precision) for v in latency_list_f16])
+    print(latency_list_f16)
 
 
 if __name__ == '__main__':

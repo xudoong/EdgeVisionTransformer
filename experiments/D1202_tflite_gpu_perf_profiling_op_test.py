@@ -139,6 +139,13 @@ class OpTester:
         latency_list = [float(x[len('Total time - '): -len('ms')]) for x in match_list]
         latency_list = sorted(latency_list)
         return np.average(latency_list[: max(1, len(latency_list) // 3)])
+    
+    def _fetch_profiling_latency(self, text):
+        try:
+            match = re.findall(r'Ideal total time: \d+\.\d+', text)[0]
+            return float(match[len('Ideal total time: '): ])
+        except:
+            return 0.0
 
     def _benchmark_single(self, model_path):
         file_name = os.path.basename(model_path)
@@ -147,11 +154,11 @@ class OpTester:
         fp16_ms = 0.0
         try:
             self.adb.push(model_path, f'/sdcard/{file_name}')
-            fp32_output = self.adb.run_cmd(f'/data/local/tmp/performance_profiling_plus_f32 {dst_path} F32')
-            fp16_output = self.adb.run_cmd(f'/data/local/tmp/performance_profiling_plus_f32 {dst_path} F16')
+            fp32_output = self.adb.run_cmd(f'/data/local/tmp/performance_profiling_fixed_group_size {dst_path} F32')
+            fp16_output = self.adb.run_cmd(f'/data/local/tmp/performance_profiling_fixed_group_size {dst_path} F16')
             self.adb.remove(dst_path)
-            fp32_ms = self._fetch_latency(fp32_output)
-            fp16_ms = self._fetch_latency(fp16_output)
+            fp32_ms = self._fetch_profiling_latency(fp32_output)
+            fp16_ms = self._fetch_profiling_latency(fp16_output)
         except:
             pass
         print(fp32_ms, fp16_ms)

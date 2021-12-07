@@ -497,6 +497,9 @@ def freeze_graph(keras_model_path=None, keras_model=None, output_path='./tmp.pb'
        model = tf.keras.models.load_model(keras_model_path)
     else:
         model = keras_model
+    if not os.path.exists(os.path.dirname(output_path)):
+        os.makedirs(os.path.dirname(output_path))
+
     # Convert Keras model to ConcreteFunction
     full_model = tf.function(lambda x: model(x))
     full_model = full_model.get_concrete_function(

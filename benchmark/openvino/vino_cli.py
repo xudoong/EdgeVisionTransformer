@@ -70,7 +70,7 @@ def model_optimize_cli():
         model_optimize(mo_path, model_path, output_dir, batch_size, input_shape=input_shape, data_type=data_type)
 
 
-def openvino_benchmark(benchmark_app_path, model_path, niter=10, num_threads=1, batch_size=1, device='CPU', re_pattern=r'Total', csv_output_dir=None, show_detail=True):
+def openvino_benchmark(benchmark_app_path, model_path, niter=10, num_threads=1, batch_size=1, device='CPU', layername_pattern=r'Total', layertype_pattern=None, csv_output_dir=None, show_detail=True):
     # setup_envs_path = os.path.join(openvino_root_path, 'bin')
     # source_cmd = f'"{os.path.join(setup_envs_path, os.listdir(setup_envs_path)[0])}"'
     benchmark_cmd = f'python "{benchmark_app_path}" -m "{model_path}" -niter={niter} -nthreads={num_threads} -b={batch_size} -d {device} -nireq=1 -api=sync --report_type=detailed_counters'
@@ -88,7 +88,7 @@ def openvino_benchmark(benchmark_app_path, model_path, niter=10, num_threads=1, 
     with open('benchmark_detailed_counters_report.csv', 'r') as f:
         csvreader = csv.reader(f, delimiter=';')
         for r in csvreader:
-            if len(r) and re.fullmatch(re_pattern, r[0]):
+            if len(r) and re.fullmatch(layername_pattern, r[0]) and (layertype_pattern is None or re.fullmatch(layertype_pattern, r[2])):
                 latency += float(r[4])
 
     if csv_output_dir:

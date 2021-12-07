@@ -310,6 +310,12 @@ def tf2tflite_dir(saved_model_dir, output_dir, quantization, skip_existed=False,
         if skip_existed and os.path.exists(dst_path):
             print(f'{dst_path} exists, skip it.')
         else:
+            if input_shape is None and quantization == 'int8':
+                print('input_shape not specified when performing int8 quantization. Fetch from saved model.')
+                import tensorflow as tf
+                model = tf.keras.models.load_model(src_path)
+                input_shape = model.input_shape
+                print(f'input_shape: {input_shape}')
             tf2tflite(src_path, dst_path, quantization=quantization, input_shape=input_shape)
 
 

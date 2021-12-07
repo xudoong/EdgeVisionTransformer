@@ -1,5 +1,4 @@
 from tensorflow import keras
-from modeling.models.cnn_zoo import cnn_zoo_dict
 import os
 import sys
 import subprocess
@@ -9,8 +8,7 @@ import json
 
 sys.path.insert(0, f'{os.path.dirname(sys.argv[0])}/..')
 from utils import freeze_graph
-
-sys.path.insert(0, f'{os.path.dirname(sys.argv[0])}/..')
+from modeling.models.cnn_zoo import cnn_zoo_dict
 from benchmark.openvino.vino_cli import openvino_benchmark
 
 class PotConfigJson:

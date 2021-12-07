@@ -20,7 +20,7 @@ class ADB:
         return result
 
 def fetch_number(text: str, marker: str):
-    result = re.findall(f'{marker}\d+\.\d+', text)[0]
+    result = re.findall(f'{marker}\d+\.\d+|{marker}\d+', text)[0]
     return float(result[len(marker):])
     
 def main():
@@ -28,12 +28,19 @@ def main():
     parser.add_argument('--model_dir', type=str, required=True, help='tflite model dir to test')
     parser.add_argument('--serino', default='98281FFAZ009SV', type=str, help='phone serial number to test')
     parser.add_argument('--precision', default=3, type=int, help='precision to print latency')
+    parser.add_argument('--dump_csv', action='store_true', dest='dump_csv', help='dump result to csv file')
     args = parser.parse_args()
 
     adb = ADB(args.serino)
     name_list = []
     latency_list_f32 = []
     latency_list_f16 = []
+
+    if args.dump_csv:
+        with open('result_gpu_fp32.csv', 'a') as f:
+            f.write('model_name, fp32_ms\n')
+        with open('result_gpu_fp16.csv', 'a') as f:
+            f.write('model_name fp16_ms\n')
 
     for name in sorted(os.listdir(args.model_dir)):
         f32_ms = 0
@@ -54,6 +61,11 @@ def main():
         latency_list_f16.append(round(f16_ms, args.precision))
         
         print(name_list[-1], f32_ms, f16_ms)
+        if args.dump_csv:
+            with open('result_gpu_fp32.csv', 'a') as f:
+                f.write(f'{name_list[-1]}, {latency_list_f32[-1]}\n')
+            with open('result_gpu_fp16.csv', 'a') as f:
+                f.write(f'{name_list[-1]}, {latency_list_f16[-1]}\n')
 
     print('==== LATENCY SUMMARY ====')
     print(name_list)
@@ -61,7 +73,6 @@ def main():
     print(latency_list_f32)
     print('[F16 Latency]')
     print(latency_list_f16)
-
 
 if __name__ == '__main__':
     main()

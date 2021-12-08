@@ -51,18 +51,14 @@ class TfliteCnnTester:
 
     def _convert(self, ):
         print('===== Converting TFLite =====')
-        tf2tflite_dir(self.tf_model_dir, os.path.join(self.tflite_model_dir, 'fp32'))
+        tf2tflite_dir(self.tf_model_dir, os.path.join(self.tflite_model_dir, 'fp32'), 'None')
 
     def _quantize(self, ):
         print('===== Quantizing =====')
-        tf2tflite_dir(self.tf_model_dir, os.path.join(self.tflite_model_dir, 'int8'))
+        tf2tflite_dir(self.tf_model_dir, os.path.join(self.tflite_model_dir, 'int8'), 'int8')
 
     def _fetch_latency(self, text: str, target='cpu_fp32'):
         if target in ['cpu_fp32', 'cpu_int8']:
-            print(f'BEGIN {target}------------------')
-            print(text)
-            print('END------------------')
-
             match = re.findall(r'avg=\d+\.\d+|avg=\d+', text)[-1]
             return float(match[len('avg='): ]) / 1000
         else:
@@ -100,7 +96,7 @@ class TfliteCnnTester:
             for model_name in name_list:
                 tflite_path = self._get_fp32_tflite_path(model_name)
                 avg_ms = self._benchmark_single(tflite_path, target)
-                result_dict[model_name][target] = round(avg_ms, 2 if target == 'cpu' else 5)
+                result_dict[model_name][target] = round(avg_ms, 2 if target == 'cpu_fp32' else 5)
         for model_name in name_list:
             tflite_path = self._get_int8_tflite_path(model_name)
             avg_ms = self._benchmark_single(tflite_path, 'cpu_int8')
@@ -114,6 +110,9 @@ class TfliteCnnTester:
             print(target, *[result_dict[k][target] for k in name_list])
 
     def run(self, ):
+        self._export_tf()
+        self._convert()
+        self._quantize()
         self._benchmark()
 
 

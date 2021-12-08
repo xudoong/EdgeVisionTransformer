@@ -118,9 +118,9 @@ class VinoCnnTester:
         print(latency_list_int8)
 
     def run(self, ):
-        # self._export_src()
-        # self._convert()
-        # self._quantize()
+        self._export_src()
+        self._convert()
+        self._quantize()
         self._benchmark()
 
 def main():

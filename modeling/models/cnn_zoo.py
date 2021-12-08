@@ -1,4 +1,5 @@
 import tensorflow as tf
+import tensorflow_hub as hub
 from .squeezenet import SqueezeNet
 from . import shufflenet
 from . import shufflenetv2
@@ -46,6 +47,10 @@ def get_efficientnetb0():
     model = tf.keras.applications.EfficientNetB0()
     return add_keras_input_layer(model, [224, 224, 3], 1)
 
+def get_efficientnetb0_lite():
+    model = hub.KerasLayer("https://tfhub.dev/tensorflow/efficientnet/lite0/classification/2")
+    return add_keras_input_layer(model, [224, 224, 3], 1)
+    
 def get_resnet50():
     model = tf.keras.applications.ResNet50()
     return add_keras_input_layer(model, [224, 224, 3], 1)
@@ -79,6 +84,7 @@ cnn_zoo_dict = {
     'inception_resnetv2': get_inception_resnetv2,
     'inceptionv3': get_inceptionv3,
     'efficientnetb0': get_efficientnetb0,
+    'efficientnetb0_lite': get_efficientnetb0_lite,
     'resnet50': get_resnet50,
     'resnet50v2': get_resnet50v2,
     'shufflenet': get_shufflenet,

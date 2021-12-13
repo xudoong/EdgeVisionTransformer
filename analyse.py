@@ -189,11 +189,42 @@ def analyse_attn_ffn(parser: argparse.ArgumentParser):
           f'ffn (percent, latency) = ({ffn_percent:.2f}, {ffn_latency:.2f}) | ' +
           f'pre & post-processing (percent, latency) = ({pre_post_processing_percent:.2f}, {pre_post_processing_latency:.2f})')
 
+def fetch_all_op_latency(parser: argparse.ArgumentParser):
+    import csv
+    parser.add_argument('--file', type=str, required=True, help='csv profile result file')
+    parser.add_argument('--op', choices=['conv', 'dwconv', 'dense'], required=True, help='op type to fetch latency')
+    args = parser.parse_args()
+
+    OP_NAME_DICT = {
+        'conv': 'CONV_2D',
+        'dwconv': 'DEPTHWISE_CONV_2D',
+        'dense': 'FULLY_CONNECTED'
+    }
+
+    rows = _read_rows(args.file)
+    begin_line, schema = _find_begin_line(rows)
+    latency_list = []
+    end_line = 0
+    for i in range(begin_line, len(rows)):
+        row = rows[i]
+        if len(row) < len(schema): 
+            end_line = i
+            break
+    rows = sorted(rows[begin_line: end_line], key=lambda row: float(row[schema['start']]))
+
+    for row in rows:
+        node_type = row[schema['node type']]
+        if node_type == OP_NAME_DICT[args.op]:
+            latency_list.append(round(float(row[schema['avg_ms']]), 2))
+
+    print(f'{args.op} count = {len(latency_list)}')
+    print(latency_list)
 
 function_dict = {
     'analyse_op': analyse_op,
     'analyse_gelu_ln': analyse_gelu_ln,
     'analyse_attn_ffn': analyse_attn_ffn,
+    'fetch_all_op_latency': fetch_all_op_latency
 }
 
 if __name__ == '__main__':

@@ -1,7 +1,9 @@
 """Computes the flops needed for training/running transformer networks."""
-"""Borrowed from https://github.com/google-research/electra/blob/8a46635f32083ada044d7e9ad09604742600ee7b/flops_computation.py"""
+"""Based on https://github.com/google-research/electra/blob/8a46635f32083ada044d7e9ad09604742600ee7b/flops_computation.py"""
 import collections
+from os import stat
 from sys import path
+from typing import List
 
 # We checked this code with TensorFlow"s FLOPs counting, although we had to
 # correct for this issue: https://github.com/tensorflow/tensorflow/issues/22071
@@ -60,7 +62,7 @@ class TransformerHparams(object):
         self.output_frac = output_frac  # percent of tokens using an output softmax
         self.sparse_embed_lookup = sparse_embed_lookup  # sparse embedding lookups
         self.decoder = decoder  # decoder has extra attn to encoder states
-        print(self.h, self.kqv, self.heads, self.i)
+        
     def get_block_flops(self):
         """Get the forward-pass FLOPs for a single transformer block."""
         attn_mul = 2 if self.decoder else 1
@@ -144,62 +146,6 @@ class TransformerHparams(object):
                 self.get_embedding_flops(output=False) +
                 self.get_binary_classification_flops())
 
-
-class ViTHparams(TransformerHparams):
-    def __init__(self, image_size=224, patch_size=16, channels=3, num_classes=1000, mlp_dim=None, **kwargs):
-      self.image_size = image_size
-      self.patch_size = patch_size
-      self.num_patches = (image_size // patch_size) ** 2
-      self.channels = channels
-      self.num_classes = num_classes
-      super().__init__(**kwargs, s=self.num_patches + 1)
-      if mlp_dim is None:
-        self.mlp_dim = self.h * 4
-      else:
-        self.mlp_dim = mlp_dim
-      
-    def get_embedding_flops(self):
-      embedding_flops = {}
-      embedding_flops.update(dict(
-        patch_to_embedding = 2 * self.num_patches * self.channels * (self.patch_size ** 2) * self.e,
-        add_position = (self.num_patches + 1) * self.e
-      ))
-      return sum(embedding_flops.values())
-
-    def get_classification_flops(self):
-        classification_flops = dict(
-            internal_matmul = 2 * self.h * self.mlp_dim,
-            internal_bias = self.mlp_dim,
-            internal_act = ACTIVATION_FLOPS * self.mlp_dim,
-            output_matmul = 2 * self.mlp_dim * self.num_classes,
-            output_bias = self.num_classes,
-            output_act = self.num_classes,
-        )
-        return sum(classification_flops.values())
-
-    def get_infer_flops(self):
-        return (self.get_embedding_flops() + 
-              self.l * self.get_block_flops() + 
-              self.get_classification_flops())
-
-
-class PrunedViTHparams(ViTHparams):
-    def __init__(self, num_heads_per_layer, ffn_sparsity_per_layer, **kwargs):
-        intermediate_size = int((1 - ffn_sparsity_per_layer) * kwargs.pop('i', kwargs['h'] * 4))
-        head_size = kwargs.pop('head_size', 64)
-        super().__init__(heads=num_heads_per_layer, head_size=head_size, i=intermediate_size, **kwargs)
-
-
-def get_pruned_deit_flops(type, num_heads_per_layer, ffn_sparsity_per_layer):
-    assert type in ['tiny', 'small', 'base']
-    hidden_size_dict = {'tiny': 192, 'small': 384, 'base': 768}
-    h = hidden_size_dict[type]
-    return PrunedViTHparams(num_heads_per_layer=num_heads_per_layer,
-                            ffn_sparsity_per_layer=ffn_sparsity_per_layer, 
-                            h=h, l=12
-    ).get_infer_flops()
-
-
 def get_electra_train_flops(
         h_d, l_d, h_g, l_g, batch_size, train_steps, tied_embeddings,
         e=None, s=512, output_frac=0.15625):
@@ -266,6 +212,178 @@ MODEL_FLOPS = collections.OrderedDict([
 ])
 
 
+class ViTHparams(TransformerHparams):
+    def __init__(self, image_size=224, patch_size=16, channels=3, num_classes=1000, mlp_dim=None, **kwargs):
+      self.image_size = image_size
+      self.patch_size = patch_size
+      self.num_patches = (image_size // patch_size) ** 2
+      self.channels = channels
+      self.num_classes = num_classes
+      super().__init__(**kwargs, s=self.num_patches + 1)
+      if mlp_dim is None:
+        self.mlp_dim = self.h * 4
+      else:
+        self.mlp_dim = mlp_dim
+      
+    def get_embedding_flops(self):
+      embedding_flops = {}
+      embedding_flops.update(dict(
+        patch_to_embedding = 2 * self.num_patches * self.channels * (self.patch_size ** 2) * self.e,
+        add_position = (self.num_patches + 1) * self.e
+      ))
+      return sum(embedding_flops.values())
+
+    def get_classification_flops(self):
+        classification_flops = dict(
+            internal_matmul = 2 * self.h * self.mlp_dim,
+            internal_bias = self.mlp_dim,
+            internal_act = ACTIVATION_FLOPS * self.mlp_dim,
+            output_matmul = 2 * self.mlp_dim * self.num_classes,
+            output_bias = self.num_classes,
+            output_act = self.num_classes,
+        )
+        return sum(classification_flops.values())
+
+    def get_infer_flops(self):
+        return (self.get_embedding_flops() + 
+              self.l * self.get_block_flops() + 
+              self.get_classification_flops())
+
+
+class PrunedViTHparams(ViTHparams):
+    def __init__(self, num_heads_per_layer, ffn_sparsity_per_layer, **kwargs):
+        intermediate_size = int((1 - ffn_sparsity_per_layer) * kwargs.pop('i', kwargs['h'] * 4))
+        head_size = kwargs.pop('head_size', 64)
+        super().__init__(heads=num_heads_per_layer, head_size=head_size, i=intermediate_size, **kwargs)
+
+    @staticmethod
+    def get_pruned_deit_flops(type, num_heads_per_layer, ffn_sparsity_per_layer):
+        assert type in ['tiny', 'small', 'base']
+        hidden_size_dict = {'tiny': 192, 'small': 384, 'base': 768}
+        h = hidden_size_dict[type]
+        return PrunedViTHparams(num_heads_per_layer=num_heads_per_layer,
+                                ffn_sparsity_per_layer=ffn_sparsity_per_layer, 
+                                h=h, l=12
+        ).get_infer_flops()
+
+    @staticmethod
+    def experiment_show_pruned_deit_flops():
+        type2heads_dict = {'tiny': 3, 'small': 6, 'base': 12}
+        print('=== MACs of Pruned DeiT === (MMACs)')
+        print('** 1) only prune ffn ***')
+        for type in ['tiny', 'small', 'base']:
+            flops_list = []
+            num_heads = type2heads_dict[type]
+            for sparsity in range(0, 100, 10):
+                sparsity /= 100
+                flops = PrunedViTHparams.get_pruned_deit_flops(type, num_heads_per_layer=num_heads, ffn_sparsity_per_layer=sparsity)
+                flops_list.append(round(flops / 2e6, 2))
+            print(type, flops_list)
+
+        print('** 2) only prune head ***')
+        for type in ['tiny', 'small', 'base']:
+            flops_list = []
+            num_heads = type2heads_dict[type]
+            for heads in range(1, num_heads + 1):
+                flops = PrunedViTHparams.get_pruned_deit_flops(type, num_heads_per_layer=heads, ffn_sparsity_per_layer=0)
+                flops_list.append(round(flops / 2e6, 2))
+            print(type, flops_list)
+
+        print('** 3) prune head + ffn **')
+        tiny_flops_list = []
+        tiny_flops_list.append(round(PrunedViTHparams.get_pruned_deit_flops('tiny', 2, 0.1) / 2e6, 2))
+        tiny_flops_list.append(round(PrunedViTHparams.get_pruned_deit_flops('tiny', 2, 0.2) / 2e6, 2))
+        tiny_flops_list.append(round(PrunedViTHparams.get_pruned_deit_flops('tiny', 2, 0.3) / 2e6, 2))
+        print('tiny head2 ffn ', tiny_flops_list)
+
+        small_flops_list = []
+        small_flops_list.append(round(PrunedViTHparams.get_pruned_deit_flops('small', 4, 0.1) / 2e6, 2))
+        small_flops_list.append(round(PrunedViTHparams.get_pruned_deit_flops('small', 4, 0.2) / 2e6, 2))
+        small_flops_list.append(round(PrunedViTHparams.get_pruned_deit_flops('small', 4, 0.3) / 2e6, 2))
+        small_flops_list.append(round(PrunedViTHparams.get_pruned_deit_flops('small', 4, 0.4) / 2e6, 2))
+        small_flops_list.append(round(PrunedViTHparams.get_pruned_deit_flops('small', 5, 0.1) / 2e6, 2))
+        small_flops_list.append(round(PrunedViTHparams.get_pruned_deit_flops('small', 5, 0.2) / 2e6, 2))
+        small_flops_list.append(round(PrunedViTHparams.get_pruned_deit_flops('small', 5, 0.3) / 2e6, 2))
+        small_flops_list.append(round(PrunedViTHparams.get_pruned_deit_flops('small', 5, 0.4) / 2e6, 2))
+        print('small head4', small_flops_list[:4])
+        print('small head5', small_flops_list[4:])
+
+
+class SwinFlops:
+    def __init__(self, depths: List, base_dim: int,  mlp_ratio: float, base_heads: int, image_size=224, patch_size=4, window_size=7, num_stages=4, num_classes=1000) -> None:
+        self.depth_list = depths
+        self.hidden_size_list = [(1 << i) * base_dim for i in range(num_stages)]
+        self.mlp_ratio = mlp_ratio
+        self.heads_list = [(1 << i) * base_heads for i in range(num_stages)]
+        self.seq_len_list = [(image_size // patch_size) ** 2 // (1 << i) ** 2 for i in range(num_stages)]
+        self.window_size = window_size
+        self.image_size = image_size
+        self.patch_size = patch_size
+        self.num_stages = num_stages
+        self.num_classes = num_classes
+
+    @staticmethod
+    def block_flops(seq_len, hidden_size, mlp_ratio, num_heads, window_size) -> int:
+        flops = 0
+        flops += seq_len * hidden_size # norm1
+        flops += SwinFlops.window_attention_flops(seq_len, hidden_size, num_heads, window_size)
+        flops += seq_len * hidden_size # norm2
+        flops += SwinFlops.mlp_flops(seq_len, hidden_size, mlp_ratio)
+        return flops
+
+    @staticmethod
+    def window_attention_flops(seq_len, hidden_size, num_heads, window_size) -> int:
+        flops = 0
+        flops += 4 * seq_len * hidden_size * hidden_size # Linear Layer
+        
+        num_windows = seq_len // window_size ** 2
+        seq_len_per_window = window_size ** 2
+        head_size = hidden_size // num_heads
+        flops_per_head = 0
+        flops_per_head += 2 * seq_len_per_window ** 2 * head_size # QKV
+        flops_per_head += 2 * seq_len_per_window ** 2 # softmax
+
+        flops += num_windows * num_heads * flops_per_head # attention
+        return flops
+
+    @staticmethod
+    def mlp_flops(seq_len, hidden_size, mlp_ratio) -> int:
+        flops = 2 * seq_len * hidden_size * hidden_size * mlp_ratio
+        return flops
+
+    @staticmethod
+    def patch_merging_flops(seq_len, hidden_size) -> int:
+        flops = 0
+        flops += seq_len * hidden_size # norm
+        flops += (seq_len // 4) * (4 * hidden_size) * (2 * hidden_size)
+        return flops
+
+    @staticmethod
+    def patch_embedding_flops(image_size, patch_size, hidden_size) -> int:
+        seq_len = (image_size // patch_size) ** 2
+        input_token_size = 3 * patch_size * patch_size
+        return seq_len * input_token_size * hidden_size # ignore norm
+
+    @staticmethod
+    def classification_head_flops(seq_len, hidden_size, num_classes) -> int:
+        flops = 0
+        flops += 2 * seq_len * hidden_size # pooling + norm
+        flops += hidden_size * num_classes # Linear
+        return flops
+
+    def get_flops(self) ->int:
+        flops = 0
+        flops += SwinFlops.patch_embedding_flops(image_size=self.image_size, patch_size=self.patch_size, hidden_size=self.hidden_size_list[0])
+        for i in range(self.num_stages):
+            depth = self.depth_list[i]
+            hidden_size = self.hidden_size_list[i]
+            seq_len = self.seq_len_list[i]
+            num_heads = self.heads_list[i]
+            flops += depth * SwinFlops.block_flops(seq_len=seq_len, hidden_size=hidden_size, mlp_ratio=self.mlp_ratio, num_heads=num_heads, window_size=self.window_size)
+            flops += SwinFlops.patch_merging_flops(seq_len=seq_len, hidden_size=hidden_size)
+        flops += SwinFlops.classification_head_flops(seq_len=self.seq_len_list[-1], hidden_size=self.hidden_size_list[-1], num_classes=self.num_classes)
+        return flops 
+
 MY_FLOPS = dict(
     bert_small = TransformerHparams(l = 4, h = 512, s = 128).get_block_flops() * 4, 
     bert_medium = TransformerHparams(l = 8, h = 512, s = 128).get_block_flops() * 8,
@@ -279,54 +397,10 @@ MY_FLOPS = dict(
 )
 
 
-def show_pruned_deit_flops():
-    type2heads_dict = {'tiny': 3, 'small': 6, 'base': 12}
-    print('=== MACs of Pruned DeiT === (MMACs)')
-    print('** 1) only prune ffn ***')
-    for type in ['tiny', 'small', 'base']:
-        flops_list = []
-        num_heads = type2heads_dict[type]
-        for sparsity in range(0, 100, 10):
-            sparsity /= 100
-            flops = get_pruned_deit_flops(type, num_heads_per_layer=num_heads, ffn_sparsity_per_layer=sparsity)
-            flops_list.append(round(flops / 2e6, 2))
-        print(type, flops_list)
-
-    print('** 2) only prune head ***')
-    for type in ['tiny', 'small', 'base']:
-        flops_list = []
-        num_heads = type2heads_dict[type]
-        for heads in range(1, num_heads + 1):
-            flops = get_pruned_deit_flops(type, num_heads_per_layer=heads, ffn_sparsity_per_layer=0)
-            flops_list.append(round(flops / 2e6, 2))
-        print(type, flops_list)
-
-    print('** 3) prune head + ffn **')
-    tiny_flops_list = []
-    tiny_flops_list.append(round(get_pruned_deit_flops('tiny', 2, 0.1) / 2e6, 2))
-    tiny_flops_list.append(round(get_pruned_deit_flops('tiny', 2, 0.2) / 2e6, 2))
-    tiny_flops_list.append(round(get_pruned_deit_flops('tiny', 2, 0.3) / 2e6, 2))
-    print('tiny head2 ffn ', tiny_flops_list)
-
-    small_flops_list = []
-    small_flops_list.append(round(get_pruned_deit_flops('small', 4, 0.1) / 2e6, 2))
-    small_flops_list.append(round(get_pruned_deit_flops('small', 4, 0.2) / 2e6, 2))
-    small_flops_list.append(round(get_pruned_deit_flops('small', 4, 0.3) / 2e6, 2))
-    small_flops_list.append(round(get_pruned_deit_flops('small', 4, 0.4) / 2e6, 2))
-    small_flops_list.append(round(get_pruned_deit_flops('small', 5, 0.1) / 2e6, 2))
-    small_flops_list.append(round(get_pruned_deit_flops('small', 5, 0.2) / 2e6, 2))
-    small_flops_list.append(round(get_pruned_deit_flops('small', 5, 0.3) / 2e6, 2))
-    small_flops_list.append(round(get_pruned_deit_flops('small', 5, 0.4) / 2e6, 2))
-    print('small head4', small_flops_list[:4])
-    print('small head5', small_flops_list[4:])
-
 
 def main():
-    # for k, v in MODEL_FLOPS.items():
-    #     print(k, v)
-    for k, v in MY_FLOPS.items():
-        print(k, v)
-    show_pruned_deit_flops()
+    flops = SwinFlops(depths=[2, 2, 18, 2], base_dim=128, mlp_ratio=4, base_heads=3).get_flops()
+    print(flops / 1e9)
 
 if __name__ == "__main__":
     main()

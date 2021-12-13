@@ -23,7 +23,7 @@ def main():
         utils.tf2tflite(input_path, output_path.replace('.tflite', '_quant_int8.tflite').replace('/fp32/', '/int8/'), quantization='int8', input_shape=input_shape)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_zoo_dir', required=True, type=str, help='output tf model dir')
+    parser.add_argument('--model_zoo_dir', default='models', type=str, help='output tf model dir')
     args = parser.parse_args()
 
     tf_dir = os.path.join(args.model_zoo_dir, 'tf_model', 'quant_op_test')
@@ -147,6 +147,15 @@ def main():
             [1, 56, 56, x]
         )
 
+    for x in range(1, 128 + 1):
+        model = make_model([56, 56, x], layers.Conv2D(x, 1, padding='same'))
+        model.save(os.path.join(tf_dir, 'conv1x1_cio', f'conv_k3_i32_o{x:03}_hw56.tf'))
+        quant_model(
+            os.path.join(tf_dir, 'conv1x1_cio', f'conv_k3_i32_o{x:03}_hw56.tf'),
+            os.path.join(tflite_dir, 'conv1x1_cio', 'fp32', f'conv_k3_i32_o{x:03}_hw56.tflite'),
+            [1, 56, 56, x]
+        )
+        
     # save dwconv
     for x in [1, 3, 5, 7]:
         model = make_model([56, 56, 32], layers.DepthwiseConv2D(kernel_size=x, padding='same', depth_multiplier=1))

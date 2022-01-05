@@ -17,11 +17,19 @@ class TvmFusionTester:
         self.rpc_key = rpc_key
         self.cross_compiler_path = cross_compiler_path
 
+    def _tune_single(self, input_path, output_path):
+        pass # TODO
+
     def _compile_single(self, input_path, output_path):
         Path(os.path.dirname(output_path)).mkdir(parents=True, exist_ok=True)
-        cmd = f'tvmc compile {input_path} -o {output_path} --target "llvm -model=snapdragon855 -mtriple=arm64-linux-android -mattr=+neon" --cross-compiler {self.cross_compiler_path}'
+        cmd = f'tvmc compile {input_path} -o {output_path} --target "llvm -mtriple=arm64-linux-android -mattr=+neon" --cross-compiler {self.cross_compiler_path}'
         result = subprocess.check_output(cmd, shell=True).decode('utf-8')
         print(result)
+
+        # unzip
+        tar_output_dir = output_path.replace('.tar', '')
+        Path(tar_output_dir).mkdir(parents=True, exist_ok=True)
+        subprocess.check_output(f'tar -xvf {output_path} -C {tar_output_dir}', shell=True)
 
     def _benchmark_single(self, model_path):
         print(os.path.basename(model_path))
@@ -30,7 +38,7 @@ class TvmFusionTester:
             shell=True, capture_output=True).stdout.decode('utf-8')
         print(result)
         numbers = re.findall(r'\d*\.?\d+', result)
-        return float(numbers[1]) # median time
+        return [float(x) for x in numbers]
 
     def _compile(self):
         print('==== Compiling ====')
@@ -52,16 +60,16 @@ class TvmFusionTester:
 
     def _benchmark(self):
         with open(OUTPUT_CSV_PATH, 'a') as f:
-            f.write('model_name,avg_ms\n')
+            f.write('model_name,mean,median,max,min,std\n')
 
         print('==== benchmarking ====')
         for root, dirs, files in os.walk(self.tvm_dir):
             for file in sorted(files):
                 if file.endswith('.tar'):
                     model_path = os.path.join(root, file)
-                    avg_ms = self._benchmark_single(model_path)
+                    mean_median_max_min_std_ms = self._benchmark_single(model_path)
                     with open(OUTPUT_CSV_PATH, 'a') as f:
-                        f.write(f'{os.path.basename(model_path)},{avg_ms:.2f}\n')
+                        f.write(f'{os.path.basename(model_path)},{",".join([str(round(ms, 2)) for ms in mean_median_max_min_std_ms])}\n')
 
     def run(self):
         self._compile()

@@ -7,7 +7,7 @@ from .attention import Attention
 from .ffn import FeedForward
 
 class TransformerEncoderBlock(tf.keras.Model):
-    def __init__(self, hidden_size, num_layers, num_heads, intermediate_size, norm_first=False):
+    def __init__(self, hidden_size, num_layers, num_heads, intermediate_size, norm_first=True):
         super().__init__()
         layers = []
         for _ in range(num_layers):
@@ -22,7 +22,7 @@ class TransformerEncoderBlock(tf.keras.Model):
 
 
 class  TransformerEncoderBlock_Pruned(tf.keras.Model):
-    def __init__(self, hidden_size, num_layers, num_remain_heads_list, intermediate_size_list, head_size=64, norm_first=False):
+    def __init__(self, hidden_size, num_layers, num_remain_heads_list, intermediate_size_list, head_size=64, norm_first=True):
         super().__init__()
         layers = []
         for i in range(num_layers):

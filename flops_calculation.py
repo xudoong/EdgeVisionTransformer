@@ -73,12 +73,13 @@ class TransformerHparams(object):
             attn_softmax=SOFTMAX_FLOPS * self.s * self.heads * attn_mul, # 5 n a
             attention_dropout=DROPOUT_FLOPS * self.s * self.heads * attn_mul, # 4 n a
             attention_scale=self.s * self.heads * attn_mul, # n a
-            attention_weighted_avg_values=2 * self.h * self.s * attn_mul,  # self.h = self.heads * self.head_size # 2 h n
-            attn_output=2 * self.h * self.h * attn_mul, # 2 h h
+            attention_weighted_avg_values=2 * self.kqv * self.s * attn_mul,  # self.h = self.heads * self.head_size # 2 h n
+            attn_output=2 * self.kqv * self.h * attn_mul, # 2 h h
             attn_output_bias=self.h * attn_mul, # h
             attn_output_dropout=DROPOUT_FLOPS * self.h * attn_mul, # 4 h
             attn_output_residual=self.h * attn_mul, # h
             attn_output_layer_norm=LAYER_NORM_FLOPS * attn_mul, # 5
+            
             intermediate=2 * self.h * self.i, # 2 h i
             intermediate_act=ACTIVATION_FLOPS * self.i, # 8 i
             intermediate_bias=self.i, # i
@@ -399,8 +400,9 @@ MY_FLOPS = dict(
 
 
 def main():
-    flops = SwinFlops(depths=[2, 2, 18, 2], base_dim=128, mlp_ratio=4, base_heads=3).get_flops()
-    print(flops / 1e9)
+    PrunedViTHparams.experiment_show_pruned_deit_flops()
+    # flops = SwinFlops(depths=[2, 2, 18, 2], base_dim=128, mlp_ratio=4, base_heads=3).get_flops()
+    # print(flops / 1e9)
 
 if __name__ == "__main__":
     main()
